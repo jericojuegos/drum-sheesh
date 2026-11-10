@@ -1,0 +1,87 @@
+# 📋 Feature Requirements: [Feature Name] (`[NN-feature-slug]`)
+
+> **Feature Slug:** `[NN-feature-slug]` · **Phase / Wave:** `Phase [N] (Wave [W])`  
+> **Depends On:** `[00-scaffold / prerequisite-slug / None]`  
+> **Branch / Owner:** `feat/[feature-slug]` · **Status:** `[ ]` Planned
+
+---
+
+## 1. Introduction & Overview
+
+[1–2 paragraphs explaining the problem this feature solves, who uses it, where it lives in the application, and how it fits into `docs/foundation/prd.md` and `docs/foundation/architecture.md`.]
+
+### Assumptions (Flagged for Review)
+
+- **A1 ([Topic — e.g., Mount point / Auth scope]):** [State the assumption made so the developer/user can confirm or override before coding.] **Needs confirmation / Confirmed.**
+- **A2 ([Topic — e.g., Data source / Prefix]):** [State the assumption.] **Needs confirmation / Confirmed.**
+
+### Domain Glossary
+
+- **[Term 1]:** [Clear 1-sentence definition of how this term is used in code and database]
+- **[Term 2]:** [Clear 1-sentence definition]
+
+---
+
+## 1.5 🖼️ Visual UI Inventory (Mandatory 1:1 Screenshot Audit When `design-reference/*.png` Exists)
+
+> **Anti-Omission Rule:** Scan every `.png`/`.jpg` in `design-reference/` from top-left to bottom-right and list **every visible sub-tab, icon button (copy, duplicate, delete, tooltip `ⓘ`), filter dropdown, input field, badge, table/accordion column, and action button** so zero UI controls are missed in Section 2 & `tasks.md`.
+
+| Screenshot File | Section / Sub-Tab | Visible Fields, Columns & Badges | All Buttons & Icon Actions (Include Icons!) | Mapped `Req` ID |
+| :--- | :--- | :--- | :--- | :--- |
+| `[screen-1.png]` | `[e.g., API Key Card]` | `[Read-only UUID key field]` | `[Regenerate Key button, Copy button]` | `Req 1.1, 1.2` |
+| `[screen-1.png]` | `[e.g., Destinations Sub-Tab]` | `[Site tabs with status icon, Name, URL, API key + ⓘ tooltip, Connected badge]` | `[+ Add Connection tab, Duplicate icon ⧉, Delete trash icon 🗑️, Disconnect button, Save button]` | `Req 2.1–2.4` |
+| `[screen-2.png]` | `[e.g., Sources Sub-Tab]` | `[Site tabs, All sources filter dropdown, URL, Type, Status badge, Data Mapping accordion (Label, Source/Dest Post Type, Data Type), Sync Exclusion Rules (AND/OR groups)]` | `[Disconnect button, Accordion expand/collapse ^, AND button, - remove row button, Add Exclusion Group button, Save button]` | `Req 3.1–3.4` |
+
+---
+
+## 2. Requirements & EARS Acceptance Criteria
+
+> Use **EARS (Easy Approach to Requirements Syntax)** so every criterion is numbered (`Req 1.1`, `Req 1.2`) and directly traceable in `design.md`, `tasks.md`, and `uat.md`:
+> - `WHEN <trigger>, THE <System/Module> SHALL <expected response>.`
+> - `IF <unwanted condition>, THEN THE <System/Module> SHALL <error handling response>.`
+> - `WHILE <state>, THE <System/Module> SHALL <behavior>.`
+> - `WHERE <optional feature/input is present>, THE <System/Module> SHALL <behavior>.`
+
+### Requirement 1: [Primary Capability Name]
+
+**User Story:** As a `[persona]`, I want to `[action]`, so that `[benefit/value]`.
+
+#### Acceptance Criteria
+1. **1.1:** WHEN `[trigger]`, THE `[System]` SHALL `[outcome]`.
+2. **1.2:** WHEN `[valid submission/action]`, THE `[System]` SHALL `[persist/return specific result]`.
+3. **1.3:** IF `[validation or precondition fails]`, THEN THE `[System]` SHALL reject the request, preserve user input, and return a field-level error message.
+
+---
+
+### Requirement 2: [Secondary Capability / Validation / Security Rule]
+
+**User Story:** As a `[persona]`, I want `[rule/constraint]`, so that `[security/data integrity goal]`.
+
+#### Acceptance Criteria
+1. **2.1:** WHEN `[trigger]`, THE `[System]` SHALL `[outcome]`.
+2. **2.2:** IF `[unauthorized or out-of-scope access]`, THEN THE `[System]` SHALL deny the request with HTTP `401`/`403` and write no records.
+
+---
+
+## 3. UI & Entrypoint Locations
+
+- **Route / Page / Shortcode:** `[e.g., src/app/(app)/feature/page.tsx or [shortcode_name]]`
+- **Feature Module Path:** `[e.g., src/features/<domain>/ or includes/<Domain>/]`
+- **Design Reference:** `[docs/specs/<NN-feature-slug>/design-reference/ or docs/foundation/design-system.md]`
+
+---
+
+## 4. Non-Goals (Out of Scope for This Feature)
+
+- **NG1:** Do NOT build `[out-of-scope item 1]` (deferred to `[Phase N / another spec]`).
+- **NG2:** Do NOT modify `[off-limits module]`.
+
+---
+
+## 5. 📝 Revision History (Post-Build Iterations & Pivots)
+
+> **As-Built Rule:** Sections 1–4 above MUST always reflect the **current, active truth** of the feature (rewrite changed requirements in-place and delete removed requirements from Section 2 so future AI sessions never read dead rules). Record every post-build change, addition, or removal here for clean audit history:
+
+| Rev | Date | Changes (Added / Changed / Removed) | Reason / User Feedback |
+| :--- | :--- | :--- | :--- |
+| `v1.0` | `YYYY-MM-DD` | Initial specification created. | Initial brainstorm / roadmap scope. |

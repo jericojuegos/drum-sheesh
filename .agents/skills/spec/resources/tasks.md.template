@@ -1,0 +1,90 @@
+# ✅ Feature Tasks: [Feature Name] (`[NN-feature-slug]`)
+
+> **Phase / Wave:** `Phase [N] (Wave [W])` · **Branch / Owner:** `feat/[feature-slug]` · **Status:** `[ ]` Planned  
+> **Depends On:** `[00-scaffold / None]` · **Touches:** `[list target directories]`  
+> **Spec Links:** [`requirements.md`](./requirements.md) · [`design.md`](./design.md) · [`uat.md`](./uat.md) · [`design-reference/`](./design-reference/)
+
+---
+
+## 🔄 Implementation Tasks
+
+> **Execution & Smart 2-Tier Testing Rules:**
+> - **Layer Labels:** `[BE]` (Backend/Data/Unit Tests), `[FE]` (Frontend/UI), `[E2E]` (Playwright Golden-Path Browser Test), `[REVIEW]` (Verification Checkpoint)
+> - **Model Modes:** Frontier models may execute a `⚡ BATCH` group (max 3–4 coupled files) together via `/build`. Fast/Low-Tier models must execute **1 sub-task (`1.1`, `1.2`) at a time**.
+> - **Multi-View / Complex Feature Rule:** If a feature has multiple sub-tabs, views, or modals (e.g. Sub-Tab A: Destinations, Sub-Tab B: Sources & Exclusions), DO NOT lump all UI into one batch. Split them into separate `⚡ BATCH` sections (`### 2. Frontend Sub-View A...`, `### 3. Frontend Sub-View B...`), each ending with a `[REVIEW]` checkpoint task.
+> - **Tier 1 — Mandatory Unit Tests (`- [ ]` Task `1.3`):** Every feature MUST have fast headless unit/invariant tests (`src/features/<domain>/__tests__/*.test.ts`, `tests/Unit/*Test.php`, `pytest`, or `forge test`) written and executed during `/build`.
+> - **Tier 2 — Smart Playwright E2E Tests (Task `3.1` or `4.1` in `e2e/<feature>.spec.ts`):**
+>   - **Mandatory (`- [ ]`)** for **Critical User Journeys** (Auth/Onboarding, Core Product Value Loop, Checkout/Billing).
+>   - **Optional (`- [ ]*`)** for secondary/settings UI features (verified via Level 3 AI Live Browser UAT).
+
+### 1. Data Layer, Server Logic & Unit Tests (`⚡ BATCH`: Coupled Schema, Handler & Unit Tests)
+- [ ] **1.1** `[BE]` Create schema/types and domain validation in `[exact/file/path]`
+  - [Implementation details from `design.md`]
+  - _Requirements: 1.1, 1.3_
+- [ ] **1.2** `[BE]` Implement server handler/controller in `[exact/file/path]`
+  - Enforce auth/RLS/nonce → input validation → persistence
+  - _Requirements: 1.2, 1.3, 2.2_
+- [ ] **1.3** `[BE]` Write & run automated unit/invariant tests in `[src/features/<domain>/__tests__/<feature>.test.ts or tests/Unit/<Domain>/<Feature>Test.php]`
+  - Test happy-path (`Property 1`) and invalid/unauthorized rejection (`Property 2`) using `.agents/skills/build/examples/feature.test.ts.template`
+  - _Validates: Property 1, Property 2 (Requirements 1.1, 1.2, 1.3, 2.2)_
+- [ ] **1.4** `[REVIEW]` **Backend & Unit Test Checkpoint:** Run `pnpm tsc --noEmit && pnpm test --run` (or `php -l` & `vendor/bin/phpunit`) — must pass with zero errors (triggers auto-checkpoint commit in `/build`)
+
+### 2. Frontend Primary View / Sub-Tab A (`⚡ BATCH`: e.g. Destinations Tab / Main Screen)
+- [ ] **2.1** `[FE]` Build primary UI component(s) / view in `[exact/file/path]` matching `design-reference/` and `docs/foundation/design-system.md`
+  - _Requirements: 1.1, 1.3_
+- [ ] **2.2** `[FE]` Wire user interactions, state persistence, and entrypoint in `[exact/file/path]`
+  - _Requirements: 1.1_
+- [ ] **2.3** `[REVIEW]` **Sub-View A Checkpoint:** Run lint/build (`pnpm tsc --noEmit && pnpm build` / `npm run build && php -l`) — must pass with zero errors (triggers auto-checkpoint commit in `/build`)
+
+### 3. Frontend Secondary View / Sub-Tab B / Modals (`⚡ BATCH`: e.g. Sources Tab / Complex Modals — if applicable)
+- [ ] **3.1** `[FE]` Build secondary UI component(s) / modals in `[exact/file/path]` matching `design-reference/`
+  - _Requirements: 2.1, 2.2_
+- [ ] **3.2** `[FE]` Wire actions, modal triggers, and data mapping logic
+  - _Requirements: 2.1, 2.3_
+- [ ] **3.3** `[REVIEW]` **Sub-View B Checkpoint:** Run lint/build — must pass with zero errors (triggers auto-checkpoint commit in `/build`)
+
+### 4. Integration, E2E & Final Verification (`⚡ BATCH`: End-to-End & UAT Hand-Off)
+- [ ]* **4.1** `[E2E]` Write Playwright Golden-Path E2E test in `e2e/[feature-slug].spec.ts` using accessible selectors (`getByRole`, `getByLabel`) from `.agents/skills/build/examples/e2e-playwright.spec.ts.template` *(remove `*` to make mandatory if this feature is Auth, Core Value Loop, or Billing)*
+  - _Requirements: 1.1, 1.2, 1.3_
+- [ ] **4.2** `[REVIEW]` **Final Feature Checkpoint:** Run full verification (`pnpm tsc --noEmit && pnpm test --run && pnpm build` / `npm run build && php -l`; plus `pnpm test:e2e`) -> triggers automatic `/ship` & roadmap sync!
+
+---
+
+## 🔀 Task Dependency Graph (Intra-Feature Waves)
+
+> Machine-readable wave order for subagents or parallel task execution within this feature:
+
+```json
+{
+  "waves": [
+    { "id": 0, "tasks": ["1.1", "1.2", "1.3"] },
+    { "id": 1, "tasks": ["1.4"] },
+    { "id": 2, "tasks": ["2.1", "2.2"] },
+    { "id": 3, "tasks": ["2.3", "2.4"] }
+  ]
+}
+```
+
+---
+
+## 🐛 Ad-Hoc / Small Enhancements
+*(Fast-track `<= 2 file` tweaks or bug fixes added after initial implementation)*
+
+---
+
+## 🧪 Feature Verification & UAT Gate
+- [ ] **Level 1 (Automated Build & Unit Tests):** Typecheck, unit tests (`__tests__/`), and full build pass with zero errors
+- [ ] **Level 2 & 3 (UAT & Visual Match):** `/verify` completed in [`uat.md`](./uat.md)
+
+---
+
+## 🛑 Blocked / Waiting
+*(None)*
+
+---
+
+## 📝 Feature Activity Log
+
+| Date | Task | Action & Files Touched |
+| :--- | :--- | :--- |
+| YYYY-MM-DD | Init | Feature spec bundle created. |

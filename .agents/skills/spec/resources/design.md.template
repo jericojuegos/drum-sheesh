@@ -1,0 +1,82 @@
+# 📐 Technical Design: [Feature Name] (`[NN-feature-slug]`)
+
+> **Feature Slug:** `[NN-feature-slug]` · **Requirements:** [`requirements.md`](./requirements.md)  
+> **Visual Reference:** [`./design-reference/`](./design-reference/) (`*.png` / `*.html` / `stitch-prompt.md`)  
+> **Blast Radius:** `🟢 ISOLATED` / `🟡 CONTAINED` / `🔴 CASCADING` / `⛔ BREAKING`
+
+---
+
+## 1. Architecture & Data Flow
+
+[Brief summary of how the Data Layer, Server Logic Layer, and Frontend UI Layer interact for this feature.]
+
+```mermaid
+flowchart TD
+    UI["Frontend UI (Component / Modal)"] -->|"Request + Auth/Nonce"| API["Server Handler (Route Handler / REST / AJAX)"]
+    API -->|"Validate (Zod / Sanitizer)"| Logic["Domain Service / Controller"]
+    Logic -->|"RLS / Prepared Query"| DB[("Database / Storage")]
+```
+
+---
+
+## 2. File Placement, Component Interfaces & Visual Mapping
+
+> Must strictly follow `docs/foundation/architecture.md` and `.agents/rules/stack-rules.md` layer boundaries. Every `[FE]` UI file must map to its approved reference in `./design-reference/` (or `docs/foundation/design-system.md`).
+
+| Action | Exact File Path | Layer | Responsibility & Visual Reference (`design-reference/`) | Validates |
+| :--- | :--- | :--- | :--- | :--- |
+| `[NEW]` | `[path/to/schema-or-model]` | `[BE]` Data | `[Types, Zod schema, or DB table definition]` | `Req 1.1, 1.2` |
+| `[NEW]` | `[path/to/handler-or-controller]` | `[BE]` Server | `[API endpoint, auth/capability gate, orchestration]` | `Req 1.2, 2.2` |
+| `[NEW]` | `[src/features/<domain>/__tests__/<feature>.test.ts]` | `[BE]` Test | `[Automated unit & invariant tests for Property 1 & Property 2]` | `Req 1.1, 1.3, 2.2` |
+| `[NEW]` | `[path/to/ui-component]` | `[FE]` UI | `[Form, state handling — matches design-reference/01-screen.png]` | `Req 1.1, 1.3` |
+| `[MODIFY]` | `[path/to/entrypoint]` | `[FE]` Route | `[Thin wrapper mounting the feature component]` | `Req 1.1` |
+
+---
+
+## 3. Data Models & API Contracts
+
+### Database / Entity Schema
+| Field / Column | Type | Required | Constraints & Notes |
+| :--- | :--- | :--- | :--- |
+| `id` | `uuid / bigint` | auto | Primary key |
+| `[field_name]` | `[type]` | yes/no | `[Validation range, default value, Req ref]` |
+
+### API / Action Request & Response Contract
+- **Endpoint / Action:** `[POST /api/... or wp_ajax_...]`
+- **Success Response (`200` / `201`):**
+  ```json
+  { "ok": true, "data": { "id": "..." } }
+  ```
+- **Error Response Envelope:**
+  ```json
+  {
+    "ok": false,
+    "error": {
+      "type": "validation | auth | context | persistence",
+      "message": "Human-readable summary",
+      "fields": { "field_name": "Specific field error" }
+    }
+  }
+  ```
+
+---
+
+## 4. Error Handling Matrix
+
+| Category | Trigger | HTTP Status | DB Write? | UI Behavior | Validates |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `auth` / `permission` | Missing session, invalid nonce, or insufficient capability/RLS | `401` / `403` | No | Show access-denied or session-expired banner | `Req 2.2` |
+| `validation` | Missing required field or out-of-bounds input | `400` / `422` | No | Highlight invalid field(s) and preserve user input | `Req 1.3` |
+| `persistence` | Database / external service failure after valid input | `500` | No (atomic) | Show retryable error toast/banner; preserve user input | `Req 1.3` |
+
+---
+
+## 5. Correctness Properties & Verification Strategy
+
+### Correctness Properties (Invariants)
+- **Property 1 ([Name]):** *For any* `[input condition]`, the system SHALL `[invariant behavior]`. *(Validates: `Req 1.1, 1.2`)*
+- **Property 2 ([Name]):** *For any* `[unauthorized or invalid input]`, the system SHALL reject the request before any state mutation occurs. *(Validates: `Req 1.3, 2.2`)*
+
+### Verification Commands
+- **Terminal Check (Every Task):** `[pnpm tsc --noEmit / php -l <file.php>]`
+- **Full Build / Test Check:** `[pnpm build / vendor/bin/phpunit]`

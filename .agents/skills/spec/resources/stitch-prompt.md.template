@@ -1,0 +1,42 @@
+# 🎨 UI / Google Stitch Prompt: [Feature Name] (`[NN-feature-slug]`)
+
+> **How to Use:**
+> 1. **Personal / New UI (Google Stitch):** Copy the prompt block below into [Google Stitch](https://stitch.withgoogle.com/) (or v0 / Figma AI). Once happy with the design, export the **screenshot (`01-<screen>.png`)** and **HTML/Tailwind code (`01-<screen>.html`)** into this folder (`docs/specs/[NN-feature-slug]/design-reference/`).
+> 2. **Client Already Has Designs:** Simply drop the client's Figma/wireframe screenshots (`*.png` / `*.jpg`) into this folder (`docs/specs/[NN-feature-slug]/design-reference/`) and run `/spec` or `/build`.
+
+---
+
+## Screen 1 Prompt — `[Primary Screen Name]` (Copy-Paste into Stitch)
+
+```text
+Design a [desktop web / mobile-first web / WordPress admin] screen for "[PROJECT NAME]" — [1-sentence product summary].
+
+SCREEN PURPOSE:
+[Describe what the user accomplishes on this screen, based on requirements.md]
+
+VISUAL DIRECTION & DESIGN TOKENS (from docs/foundation/design-system.md):
+- Visual Tone: [e.g., Clean & Minimal / Bold & Modern / Enterprise]
+- Mode: [Light / Dark]
+- Background Primary: [HEX] | Surface / Card: [HEX] | Border: [HEX]
+- Text Primary: [HEX] | Text Muted: [HEX]
+- Primary Brand Accent: [HEX] | Secondary / Status Accents: [HEX]
+- Typography: Heading font [Font Name], Body font [Font Name], Monospace [Font Name]
+- Border Radius & Density: [e.g., 8px rounded-lg, compact 16px/24px card padding]
+
+LAYOUT & KEY COMPONENTS (Mapped to EARS Requirements):
+1. Header / Context Bar: [Title, breadcrumbs, primary action button]
+2. Primary Section ([Req 1.1]): [Exact inputs, dropzone, filters, or data table columns]
+3. Secondary / Results Section ([Req 1.2]): [Preview card, score badges, status indicators]
+4. Interactive States ([Req 1.3]): Show clear inline validation error state, loading skeleton/spinner state, and empty state.
+
+CONSTRAINTS:
+- Do NOT include out-of-scope elements: [list Non-Goals from requirements.md]
+- Keep layout clean, high-contrast, and scannable.
+```
+
+---
+
+## Export Checklist (Before Running `/build`)
+
+- [ ] Saved approved screenshot(s) as `docs/specs/[NN-feature-slug]/design-reference/01-[screen-name].png`
+- [ ] *(Optional)* Saved Stitch HTML/Tailwind export as `docs/specs/[NN-feature-slug]/design-reference/01-[screen-name].html`

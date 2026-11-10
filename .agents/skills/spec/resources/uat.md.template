@@ -1,0 +1,57 @@
+# 🧪 Feature UAT & Verification: [Feature Name] (`[NN-feature-slug]`)
+
+> **Feature Slug:** `[NN-feature-slug]` · **Spec Links:** [`requirements.md`](./requirements.md) · [`design.md`](./design.md) · [`tasks.md`](./tasks.md) · [`design-reference/`](./design-reference/)  
+> **Overall Status:** `[ ]` Pending · **Verified Date:** `YYYY-MM-DD`
+
+---
+
+## Level 1 — Automated Terminal, Unit & E2E Checks (AI Executes)
+
+- [ ] **Build & Type/Syntax Check:** `pnpm tsc --noEmit && pnpm build` (or `php -l` on all touched PHP files) passes with zero errors.
+- [ ] **Stack Hard-Failure Audit:** All items in `.agents/rules/stack-rules.md` (Pre-Commit Checklist) and `AGENTS.md` (Critical Constraints) pass.
+- [ ] **Unit / Invariant Tests (Tier 1 — Mandatory):** `pnpm test --run` (or `vendor/bin/phpunit` / `pytest` / `forge test`) passes for all feature unit tests.
+- [ ] **AI Prompt / LLM Evals (If Feature Uses AI/LLMs):** Prompt contract & golden dataset eval suite (`*.eval.test.ts` / `test_*_eval.py`) passes deterministic schema/injection checks (and `RUN_AI_EVALS=1` live rubric checks when configured).
+- [ ] **Playwright E2E Smoke Suite (Tier 2 — If `e2e/` Present):** `pnpm test:e2e` (`npx playwright test`) passes for critical user journey specs in `e2e/*.spec.ts`.
+
+---
+
+## Level 2 — Functional & EARS Requirement Verification (Deterministic Evidence)
+
+> **Rule (Zero Unbacked `[x]`):** Never mark a row `[x]` without populating the **`Evidence / Proof`** column with a concrete citation (automated test `file:line`, CLI/HTTP status output, or screenshot path in `./evidence/`).
+
+| Check ID | Requirement Ref | Scenario (WHEN / IF) | Expected Outcome (THE System SHALL) | Evidence / Proof (`test:line`, CLI output, or `./evidence/*.png`) | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **UAT-1.1** | `Req 1.1` | `[Happy-path trigger]` | `[Expected happy-path outcome]` | `[e.g., feature.test.ts:L24 PASS / ./evidence/01-happy-path.png]` | `[ ]` |
+| **UAT-1.2** | `Req 1.2` | `[Persistence / API response check]` | `[Expected DB record & HTTP 200/201 response]` | `[e.g., route.test.ts:L58 HTTP 201 + DB row verified]` | `[ ]` |
+| **UAT-1.3** | `Req 1.3` | `[Invalid / missing input submitted]` | `[HTTP 400/422, zero DB writes, field error shown, input preserved]` | `[e.g., feature.test.ts:L82 HTTP 422 Zod error]` | `[ ]` |
+| **UAT-2.2** | `Req 2.2` | `[Unauthenticated or unauthorized request]` | `[HTTP 401/403 denied before any state mutation]` | `[e.g., route.test.ts:L104 HTTP 401 unauthenticated]` | `[ ]` |
+
+---
+
+## Level 3 — Visual Fidelity (`design-reference/`), Evidence Pack & Human UX Sign-Off
+
+- [ ] **Visual Reference Match:** Built UI matches approved screenshot(s) in `docs/specs/[NN-feature-slug]/design-reference/*.png` (layout, component hierarchy, states) and `docs/foundation/design-system.md` tokens (no arbitrary hardcoded hex values).
+- [ ] **Double-Submit & Empty State:** Submit button disables while in flight; empty states render cleanly.
+- [ ] **Visual Evidence Captured (Optional / Opt-In):** Screenshots saved to `docs/specs/[NN-feature-slug]/evidence/` (via `0-token` Playwright `page.screenshot()` during Level 1 E2E, or via Opt-In `flash` Agentic Browser QA).
+- [ ] **Sign-Off:** Approved to mark `[x]` in `docs/planning/roadmap.md` via `/ship`.
+
+---
+
+## 🧭 Manual Testing Walkthrough (Step-by-Step Human QA)
+
+> **Populated/Verified by `/verify` after implementation is complete.** Follow these steps to manually test this feature in your local environment.
+
+### 1. Prerequisites & Local Setup
+- **Start Server / Environment:** `[e.g., pnpm dev → http://localhost:3000 / Local WP Admin]`
+- **Entry URL / Navigation Path:** `[e.g., http://localhost:3000/dashboard/xyz or WP Admin → Plugin → Settings]`
+- **Test Account / Seed Data:** `[e.g., Logged-in user / Admin role / sample payload]`
+
+### 2. Happy-Path Walkthrough (`Req 1.1–1.2`)
+1. **Open:** Navigate to `[exact URL or screen]`.
+2. **Action:** `[Click "Button Label" / Fill field X with "sample value" / Submit]`.
+3. **Expected UI Result:** `[e.g., Loading spinner appears briefly, success toast/state renders, new item appears in list]`.
+4. **Persistence Check:** Refresh the page (`F5`) and confirm `[state/record persists from DB]`.
+
+### 3. Edge Cases & Error Validation (`Req 1.3+`)
+1. **Validation / Invalid Input:** `[e.g., Submit empty form or invalid value]` → **Expected:** `[Inline field error shown, form input preserved, HTTP 400/422]`.
+2. **Empty / Unauthorized State:** `[e.g., View with 0 records or logged-out session]` → **Expected:** `[Clean empty state or redirect/401/403]`.
