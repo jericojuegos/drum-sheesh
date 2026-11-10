@@ -18,7 +18,9 @@ class MainActivity : ComponentActivity() {
             DrumSheeshTheme(darkTheme = true) {
                 DrumSheeshRootHost(
                     drumAudioPort = container.drumAudioAdapter,
-                    clockPort = container.clockPort
+                    clockPort = container.clockPort,
+                    aiGrooveGeneratorPort = container.aiGrooveGeneratorPort,
+                    grooveRepositoryPort = container.grooveRepositoryPort
                 )
             }
         }

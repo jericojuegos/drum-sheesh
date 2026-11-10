@@ -246,6 +246,12 @@ class DrumStageViewModel(
 fun DrumStageScreen(
     viewModel: DrumStageViewModel,
     clockPort: ClockPort = ClockPort.System,
+    topOverlayContent: (@Composable () -> Unit)? = null,
+    bottomOverlayContent: (@Composable () -> Unit)? = null,
+    onOpenAiModal: (() -> Unit)? = null,
+    onToggleLoopDrawer: (() -> Unit)? = null,
+    isLoopDrawerOpen: Boolean = false,
+    isRecordingLoop: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -282,8 +288,14 @@ fun DrumStageScreen(
             isChokeFlashActive = uiState.isChokeFlashActive,
             onSelectKit = { kit -> viewModel.onEvent(DrumStageUiEvent.SelectKit(kit)) },
             onToggleHandedness = { viewModel.onEvent(DrumStageUiEvent.ToggleHandedness) },
-            onAdjustBpm = { delta -> viewModel.onEvent(DrumStageUiEvent.AdjustBpm(delta)) }
+            onAdjustBpm = { delta -> viewModel.onEvent(DrumStageUiEvent.AdjustBpm(delta)) },
+            onOpenAiModal = onOpenAiModal,
+            onToggleLoopDrawer = onToggleLoopDrawer,
+            isLoopDrawerOpen = isLoopDrawerOpen,
+            isRecordingLoop = isRecordingLoop
         )
+
+        topOverlayContent?.invoke()
 
         MultiTouchDrumStageCanvas(
             padZones = uiState.padZones,
@@ -295,5 +307,7 @@ fun DrumStageScreen(
             },
             modifier = Modifier.weight(1f)
         )
+
+        bottomOverlayContent?.invoke()
     }
 }

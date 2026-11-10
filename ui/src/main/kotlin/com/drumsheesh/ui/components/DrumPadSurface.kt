@@ -76,6 +76,10 @@ fun StudioTopBar(
     onSelectKit: (DrumKitId) -> Unit,
     onToggleHandedness: () -> Unit,
     onAdjustBpm: (Int) -> Unit,
+    onOpenAiModal: (() -> Unit)? = null,
+    onToggleLoopDrawer: (() -> Unit)? = null,
+    isLoopDrawerOpen: Boolean = false,
+    isRecordingLoop: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var kitMenuExpanded by remember { mutableStateOf(false) }
@@ -238,11 +242,67 @@ fun StudioTopBar(
             }
         }
 
-        // Right: Live Velocity Meter & Choke Status Badge
+        // Right: AI Groove Trigger, Loop Drawer Trigger, Live Velocity Meter & Choke Status Badge
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(StudioTokens.SpaceSmall)
         ) {
+            if (onOpenAiModal != null) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(StudioTokens.RadiusMd))
+                        .background(StudioColors.AiCoachIndigo.copy(alpha = 0.18f))
+                        .border(1.dp, StudioColors.AiCoachIndigo, RoundedCornerShape(StudioTokens.RadiusMd))
+                        .clickable { onOpenAiModal() }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        text = "✦ AI GROOVE",
+                        color = StudioColors.AiCoachIndigo,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+
+            if (onToggleLoopDrawer != null) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(StudioTokens.RadiusMd))
+                        .background(
+                            when {
+                                isRecordingLoop -> StudioColors.MissOrRecRed.copy(alpha = 0.22f)
+                                isLoopDrawerOpen -> StudioColors.ElectricAmberSubtle
+                                else -> StudioColors.SurfaceElevatedDark
+                            }
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = when {
+                                isRecordingLoop -> StudioColors.MissOrRecRed
+                                isLoopDrawerOpen -> StudioColors.ElectricAmber
+                                else -> StudioColors.BorderDark
+                            },
+                            shape = RoundedCornerShape(StudioTokens.RadiusMd)
+                        )
+                        .clickable { onToggleLoopDrawer() }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        text = if (isRecordingLoop) "● REC LOOP" else "LOOP REC",
+                        color = when {
+                            isRecordingLoop -> StudioColors.MissOrRecRed
+                            isLoopDrawerOpen -> StudioColors.ElectricAmber
+                            else -> StudioColors.TextPrimaryDark
+                        },
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+
             if (isChokeFlashActive) {
                 Box(
                     modifier = Modifier
