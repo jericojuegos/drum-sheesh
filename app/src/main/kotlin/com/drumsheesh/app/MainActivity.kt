@@ -10,10 +10,16 @@ import com.drumsheesh.ui.theme.DrumSheeshTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val container = (application as DrumSheeshApplication).appContainer
+        lifecycle.addObserver(container.drumAudioAdapter)
+
         enableEdgeToEdge()
         setContent {
             DrumSheeshTheme(darkTheme = true) {
-                DrumSheeshRootHost()
+                DrumSheeshRootHost(
+                    drumAudioPort = container.drumAudioAdapter,
+                    clockPort = container.clockPort
+                )
             }
         }
     }

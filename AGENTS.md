@@ -12,7 +12,7 @@
 
 ## 🚦 Project State
 
-**Stage:** `scaffolded`
+**Stage:** `active`
 **Stage last updated:** `2026-11-10`
 
 | Stage | Meaning | Next Action / Skill |
