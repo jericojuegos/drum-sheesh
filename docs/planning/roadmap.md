@@ -25,9 +25,9 @@
 | Wave | ID | Feature Slug | Spec Bundle | Depends On | Touches (Isolation Zone) | Status | Branch / Owner |
 |------|----|--------------|-------------|------------|--------------------------|--------|----------------|
 | `Wave 0` | `00` | `00-scaffold` | [`docs/specs/00-scaffold/`](../specs/00-scaffold/tasks.md) | None | `settings.gradle.kts, build.gradle.kts, core/, ui/, platform/, feature/, app/, .github/workflows/ci.yml` | `[x]` | `main` |
-| `Wave 1` | `01` | `01-drum-kit-stage` | [`docs/specs/01-drum-kit-stage/`](../specs/01-drum-kit-stage/tasks.md) | `00` | `core/model/, core/audio/, core/engine/, platform/audio/, ui/components/DrumPadSurface.kt, feature/stage/` | `[ ]` | `feat/01-drum-kit-stage` |
-| `Wave 2` | `02` | `02-groove-highway-coach` | [`docs/specs/02-groove-highway-coach/`](../specs/02-groove-highway-coach/tasks.md) | `01` | `core/coach/, ui/components/GrooveHighwayRenderer.kt, feature/highway/` | `[ ]` | `feat/02-groove-highway-coach` |
-| `Wave 2` | `03` | `03-ai-groove-recorder` | [`docs/specs/03-ai-groove-recorder/`](../specs/03-ai-groove-recorder/tasks.md) | `01` | `core/ai/, platform/ai/, platform/storage/, feature/recorder/` | `[ ]` | `feat/03-ai-groove-recorder` |
+| `Wave 1` | `01` | `01-drum-kit-stage` | [`docs/specs/01-drum-kit-stage/`](../specs/01-drum-kit-stage/tasks.md) | `00` | `core/model/, core/audio/, core/engine/, platform/audio/, ui/components/DrumPadSurface.kt, feature/stage/` | `[x]` | `feat/phase-1` |
+| `Wave 2` | `02` | `02-groove-highway-coach` | [`docs/specs/02-groove-highway-coach/`](../specs/02-groove-highway-coach/tasks.md) | `01` | `core/coach/, ui/components/GrooveHighwayRenderer.kt, feature/highway/` | `[x]` | `feat/phase-1` |
+| `Wave 2` | `03` | `03-ai-groove-recorder` | [`docs/specs/03-ai-groove-recorder/`](../specs/03-ai-groove-recorder/tasks.md) | `01` | `core/ai/, platform/ai/, platform/storage/, feature/recorder/` | `[x]` | `feat/phase-1` |
 | `Phase 2` | `04` | `04-web-studio-companion` | *(Phase 2 — `/spec 04-web-studio-companion`)* | `01, 02, 03` | `web/` | `[-]` | `feat/04-web-studio-companion` |
 
 ---
