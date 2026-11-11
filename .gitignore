@@ -1,8 +1,12 @@
 # Gradle & Android Studio
 .gradle/
 **/build/
+**/bin/
 local.properties
 .idea/
+.settings/
+.project
+.classpath
 *.iml
 *.hprof
 *.apk
