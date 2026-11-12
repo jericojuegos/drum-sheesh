@@ -95,8 +95,8 @@ fun GrooveHighwayRenderer(
 ) {
     val laneTextPaint = remember {
         AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
-            color = StudioColors.TextSecondaryDark.toArgb()
-            textSize = 24f
+            color = StudioColors.TextPrimaryDark.copy(alpha = 0.85f).toArgb()
+            textSize = 20f
             typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         }
     }
@@ -117,7 +117,7 @@ fun GrooveHighwayRenderer(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(148.dp)
+            .height(104.dp)
             .clip(RoundedCornerShape(StudioTokens.RadiusLg))
             .background(StudioColors.SurfaceElevatedDark.copy(alpha = 0.96f))
             .border(1.dp, StudioColors.BorderDark, RoundedCornerShape(StudioTokens.RadiusLg))
@@ -127,6 +127,7 @@ fun GrooveHighwayRenderer(
             val canvasH = size.height
             val laneCount = lanes.size
             val laneHeight = canvasH / laneCount.toFloat()
+            laneTextPaint.textSize = (laneHeight * 0.56f).coerceIn(16f, 24f)
 
             // Now-Line sits at 22% from the left edge so incoming notes scroll right -> left
             val labelGutterWidth = canvasW * 0.14f

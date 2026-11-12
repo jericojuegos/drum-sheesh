@@ -50,16 +50,16 @@ object PadHitResolver {
         PadHitZone(
             padId = DrumPadId.CRASH,
             centerX = 0.16f,
-            centerY = 0.21f,
-            radiusX = 0.125f,
-            radiusY = 0.175f,
+            centerY = 0.20f,
+            radiusX = 0.135f,
+            radiusY = 0.185f,
             isCircular = true,
             isAsymmetrical = true
         ),
         PadHitZone(
             padId = DrumPadId.TOM_HIGH,
             centerX = 0.39f,
-            centerY = 0.22f,
+            centerY = 0.21f,
             radiusX = 0.105f,
             radiusY = 0.16f,
             isCircular = true,
@@ -68,7 +68,7 @@ object PadHitResolver {
         PadHitZone(
             padId = DrumPadId.TOM_MID,
             centerX = 0.61f,
-            centerY = 0.22f,
+            centerY = 0.21f,
             radiusX = 0.105f,
             radiusY = 0.16f,
             isCircular = true,
@@ -77,18 +77,18 @@ object PadHitResolver {
         PadHitZone(
             padId = DrumPadId.RIDE,
             centerX = 0.84f,
-            centerY = 0.21f,
-            radiusX = 0.125f,
-            radiusY = 0.175f,
+            centerY = 0.20f,
+            radiusX = 0.145f,
+            radiusY = 0.195f,
             isCircular = true,
             isAsymmetrical = true
         ),
 
-        // Middle Row: Open Hi-Hat (Outer Left), Closed Hi-Hat (Inner Left), Snare (Center-Left), Floor Tom (Right)
+        // Middle Row: Open Hi-Hat (Outer Left), Closed Hi-Hat (Inner Left), Snare (Center), Floor Tom (Right)
         PadHitZone(
             padId = DrumPadId.HI_HAT_OPEN,
-            centerX = 0.11f,
-            centerY = 0.54f,
+            centerX = 0.10f,
+            centerY = 0.52f,
             radiusX = 0.095f,
             radiusY = 0.155f,
             isCircular = true,
@@ -96,17 +96,17 @@ object PadHitResolver {
         ),
         PadHitZone(
             padId = DrumPadId.HI_HAT_CLOSED,
-            centerX = 0.27f,
-            centerY = 0.56f,
-            radiusX = 0.095f,
-            radiusY = 0.155f,
+            centerX = 0.26f,
+            centerY = 0.54f,
+            radiusX = 0.10f,
+            radiusY = 0.16f,
             isCircular = true,
             isAsymmetrical = true
         ),
         PadHitZone(
             padId = DrumPadId.SNARE,
-            centerX = 0.46f,
-            centerY = 0.55f,
+            centerX = 0.48f,
+            centerY = 0.52f,
             radiusX = 0.125f,
             radiusY = 0.185f,
             isCircular = true,
@@ -115,29 +115,29 @@ object PadHitResolver {
         PadHitZone(
             padId = DrumPadId.TOM_FLOOR,
             centerX = 0.78f,
-            centerY = 0.56f,
+            centerY = 0.53f,
             radiusX = 0.135f,
-            radiusY = 0.19f,
+            radiusY = 0.195f,
             isCircular = true,
             isAsymmetrical = true
         ),
 
-        // Bottom Row: Dual Kick Pedals (Rounded rectangular pedal zones)
+        // Bottom Row: Dual Bass Drum + Kick Pedals
         PadHitZone(
             padId = DrumPadId.KICK_LEFT,
             centerX = 0.35f,
-            centerY = 0.86f,
+            centerY = 0.84f,
             radiusX = 0.135f,
-            radiusY = 0.115f,
+            radiusY = 0.135f,
             isCircular = false,
             isAsymmetrical = true
         ),
         PadHitZone(
             padId = DrumPadId.KICK_RIGHT,
             centerX = 0.65f,
-            centerY = 0.86f,
+            centerY = 0.84f,
             radiusX = 0.135f,
-            radiusY = 0.115f,
+            radiusY = 0.135f,
             isCircular = false,
             isAsymmetrical = true
         )

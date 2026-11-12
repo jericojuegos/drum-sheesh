@@ -2,6 +2,7 @@ package com.drumsheesh.feature.stage
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -279,6 +280,7 @@ fun DrumStageScreen(
         modifier = modifier
             .fillMaxSize()
             .background(StudioColors.StageBackgroundDark)
+            .displayCutoutPadding()
     ) {
         StudioTopBar(
             selectedKit = uiState.selectedKit,
@@ -299,6 +301,7 @@ fun DrumStageScreen(
 
         MultiTouchDrumStageCanvas(
             padZones = uiState.padZones,
+            selectedKit = uiState.selectedKit,
             isLeftHanded = uiState.isLeftHanded,
             activeHits = visualHits,
             isChokeFlashActive = uiState.isChokeFlashActive,

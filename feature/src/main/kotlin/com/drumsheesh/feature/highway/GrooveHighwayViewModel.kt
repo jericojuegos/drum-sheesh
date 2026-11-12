@@ -3,12 +3,14 @@ package com.drumsheesh.feature.highway
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -59,7 +61,7 @@ data class GrooveHighwayUiState(
     val bpm: Int = BuiltInGrooveCatalog.CLASSIC_ROCK_BACKBEAT.bpm,
     val swingPercent: Int = BuiltInGrooveCatalog.CLASSIC_ROCK_BACKBEAT.swingPercent,
     val passes: Int = 2,
-    val isHighwayExpanded: Boolean = true,
+    val isHighwayExpanded: Boolean = false,
     val isPlaying: Boolean = false,
     val sessionStartTimeMs: Long = 0L,
     val playheadTimeMs: Long = 0L,
@@ -263,6 +265,7 @@ class GrooveHighwayViewModel(
                     passes = state.passes
                 )
                 state.copy(
+                    isHighwayExpanded = true,
                     isPlaying = true,
                     sessionStartTimeMs = nowMs,
                     playheadTimeMs = nowMs,
@@ -404,12 +407,14 @@ fun GrooveHighwayOverlayPanel(
             .fillMaxWidth()
             .background(StudioColors.SurfaceDark)
             .border(1.dp, StudioColors.BorderDark)
-            .padding(horizontal = StudioTokens.SpaceCompact, vertical = StudioTokens.SpaceSmall),
-        verticalArrangement = Arrangement.spacedBy(StudioTokens.SpaceSmall)
+            .padding(horizontal = StudioTokens.SpaceCompact, vertical = StudioTokens.SpaceMicro),
+        verticalArrangement = Arrangement.spacedBy(StudioTokens.SpaceMicro)
     ) {
         // Highway Transport & Groove Selector Header Bar
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
