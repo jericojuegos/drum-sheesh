@@ -38,7 +38,7 @@ class SoundPoolDrumAudioAdapter(
 
     companion object {
         const val MAX_POLYPHONIC_STREAMS: Int = 16
-        private const val SYNTH_CACHE_VERSION: String = "v2"
+        private const val SYNTH_CACHE_VERSION: String = "v5"
     }
 
     private data class PendingSwap(
@@ -144,7 +144,7 @@ class SoundPoolDrumAudioAdapter(
 
             val wavFile = File(versionedDir, "${padId.name.lowercase()}.wav")
             if (!wavFile.exists() || wavFile.length() <= ProceduralDrumSynthesizer.WAV_HEADER_BYTES) {
-                val wavBytes = ProceduralDrumSynthesizer.synthesizeWavBytes(kitId, padId, profile)
+                val wavBytes = renderPadWavBytes(kitId, padId, profile)
                 wavFile.writeBytes(wavBytes)
             }
 
@@ -166,6 +166,24 @@ class SoundPoolDrumAudioAdapter(
                 runCatching { child.deleteRecursively() }
             }
         }
+    }
+
+    private fun renderPadWavBytes(
+        kitId: DrumKitId,
+        padId: DrumPadId,
+        profile: DrumSoundProfile
+    ): ByteArray {
+        if (kitId == DrumKitId.ACOUSTIC_STUDIO) {
+            val assetBytes = runCatching {
+                appContext.assets.open("kits/acoustic-studio/${padId.name.lowercase()}.wav").use { input ->
+                    input.readBytes()
+                }
+            }.getOrNull()
+            if (assetBytes != null && assetBytes.size > ProceduralDrumSynthesizer.WAV_HEADER_BYTES) {
+                return ProceduralDrumSynthesizer.processWavWithProfile(assetBytes, padId, profile)
+            }
+        }
+        return ProceduralDrumSynthesizer.synthesizeWavBytes(kitId, padId, profile)
     }
 
     override fun triggerPad(kitId: DrumKitId, padId: DrumPadId, velocity: Float) {

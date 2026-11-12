@@ -1,0 +1,9 @@
+Acoustic Studio Drum Samples
+============================
+Source: The Open Source Drum Kit (Real Music Media)
+Repository: https://github.com/crabacus/the-open-source-drumkit
+License: Public Domain
+
+Close-mic'd studio acoustic recordings converted to 44.1 kHz 16-bit mono WAV
+and shaped in real time by Drum Sheesh's pure-Kotlin room ambience, punch,
+and tone DSP engine (:core ProceduralDrumSynthesizer.processWavWithProfile).

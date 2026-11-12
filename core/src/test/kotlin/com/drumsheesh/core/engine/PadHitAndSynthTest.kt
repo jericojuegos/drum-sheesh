@@ -159,4 +159,32 @@ class PadHitAndSynthTest {
         assertTrue(extreme.playbackRate in 0.5f..2.0f)
         assertEquals(RoomAmbiencePreset.ARENA_VERB, SoundCharacterPreset.ARENA_ROCK.toProfile().roomPreset)
     }
+
+    @Test
+    fun `processWavWithProfile shapes close-mic WAV buffers with valid RIFF headers and arena tail`() {
+        val baseDrySample = ProceduralDrumSynthesizer.synthesizeWavBytes(
+            kitId = DrumKitId.ACOUSTIC_STUDIO,
+            padId = DrumPadId.CRASH,
+            profile = SoundCharacterPreset.TIGHT_DRY_POP.toProfile()
+        )
+        val dryProcessed = ProceduralDrumSynthesizer.processWavWithProfile(
+            wavBytes = baseDrySample,
+            padId = DrumPadId.CRASH,
+            profile = SoundCharacterPreset.TIGHT_DRY_POP.toProfile()
+        )
+        val arenaProcessed = ProceduralDrumSynthesizer.processWavWithProfile(
+            wavBytes = baseDrySample,
+            padId = DrumPadId.CRASH,
+            profile = SoundCharacterPreset.ARENA_ROCK.toProfile()
+        )
+
+        assertEquals("RIFF", String(arenaProcessed, 0, 4, Charsets.US_ASCII))
+        assertEquals("WAVE", String(arenaProcessed, 8, 4, Charsets.US_ASCII))
+        val sampleRate = ByteBuffer.wrap(arenaProcessed, 24, 4).order(ByteOrder.LITTLE_ENDIAN).int
+        assertEquals(ProceduralDrumSynthesizer.SAMPLE_RATE_HZ, sampleRate)
+        assertTrue(arenaProcessed.size > dryProcessed.size)
+        assertFalse(dryProcessed.contentEquals(arenaProcessed))
+        assertTrue(ProceduralDrumSynthesizer.computeWavRms(dryProcessed) > 0.01)
+        assertTrue(ProceduralDrumSynthesizer.computeWavRms(arenaProcessed) > 0.01)
+    }
 }

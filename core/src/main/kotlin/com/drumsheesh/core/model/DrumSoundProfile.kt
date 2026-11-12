@@ -76,52 +76,54 @@ enum class SoundCharacterPreset(
         STUDIO_NATURAL -> DrumSoundProfile(
             characterPreset = this,
             roomPreset = RoomAmbiencePreset.WOOD_ROOM,
-            punchAmount = 0.58f,
-            warmthTone = 0.48f,
+            punchAmount = 0.64f,
+            warmthTone = 0.56f,
             padSettings = emptyMap()
         )
         TIGHT_DRY_POP -> DrumSoundProfile(
             characterPreset = this,
             roomPreset = RoomAmbiencePreset.DRY_BOOTH,
-            punchAmount = 0.78f,
-            warmthTone = 0.38f,
+            punchAmount = 0.80f,
+            warmthTone = 0.46f,
             padSettings = mapOf(
-                DrumPadId.SNARE to PadMixSetting(volume = 1.08f, pitchSemitones = 1.5f),
-                DrumPadId.KICK_LEFT to PadMixSetting(volume = 1.05f, pitchSemitones = 1.0f),
-                DrumPadId.KICK_RIGHT to PadMixSetting(volume = 1.05f, pitchSemitones = 1.0f),
-                DrumPadId.HI_HAT_CLOSED to PadMixSetting(volume = 0.88f, pitchSemitones = 0.5f),
-                DrumPadId.TOM_HIGH to PadMixSetting(volume = 0.96f, pitchSemitones = 1.0f),
-                DrumPadId.TOM_MID to PadMixSetting(volume = 0.96f, pitchSemitones = 0.5f)
+                DrumPadId.SNARE to PadMixSetting(volume = 1.10f, pitchSemitones = 1.0f),
+                DrumPadId.KICK_LEFT to PadMixSetting(volume = 1.08f, pitchSemitones = 0.5f),
+                DrumPadId.KICK_RIGHT to PadMixSetting(volume = 1.08f, pitchSemitones = 0.5f),
+                DrumPadId.HI_HAT_CLOSED to PadMixSetting(volume = 0.86f, pitchSemitones = 0f),
+                DrumPadId.CRASH to PadMixSetting(volume = 0.90f, pitchSemitones = -1.0f),
+                DrumPadId.TOM_HIGH to PadMixSetting(volume = 0.98f, pitchSemitones = 0.5f),
+                DrumPadId.TOM_MID to PadMixSetting(volume = 0.98f, pitchSemitones = 0f)
             )
         )
         WARM_VINTAGE -> DrumSoundProfile(
             characterPreset = this,
             roomPreset = RoomAmbiencePreset.WOOD_ROOM,
-            punchAmount = 0.46f,
-            warmthTone = 0.84f,
+            punchAmount = 0.52f,
+            warmthTone = 0.86f,
             padSettings = mapOf(
-                DrumPadId.SNARE to PadMixSetting(volume = 1.02f, pitchSemitones = -1.5f),
-                DrumPadId.KICK_LEFT to PadMixSetting(volume = 1.12f, pitchSemitones = -1.0f),
-                DrumPadId.KICK_RIGHT to PadMixSetting(volume = 1.12f, pitchSemitones = -1.0f),
-                DrumPadId.TOM_HIGH to PadMixSetting(volume = 1.0f, pitchSemitones = -1.5f),
-                DrumPadId.TOM_MID to PadMixSetting(volume = 1.0f, pitchSemitones = -1.5f),
-                DrumPadId.TOM_FLOOR to PadMixSetting(volume = 1.06f, pitchSemitones = -2.0f),
-                DrumPadId.CRASH to PadMixSetting(volume = 0.85f, pitchSemitones = -1.0f)
+                DrumPadId.SNARE to PadMixSetting(volume = 1.04f, pitchSemitones = -1.5f),
+                DrumPadId.KICK_LEFT to PadMixSetting(volume = 1.14f, pitchSemitones = -1.0f),
+                DrumPadId.KICK_RIGHT to PadMixSetting(volume = 1.14f, pitchSemitones = -1.0f),
+                DrumPadId.TOM_HIGH to PadMixSetting(volume = 1.02f, pitchSemitones = -1.5f),
+                DrumPadId.TOM_MID to PadMixSetting(volume = 1.02f, pitchSemitones = -1.5f),
+                DrumPadId.TOM_FLOOR to PadMixSetting(volume = 1.08f, pitchSemitones = -2.0f),
+                DrumPadId.CRASH to PadMixSetting(volume = 0.88f, pitchSemitones = -2.0f)
             )
         )
         ARENA_ROCK -> DrumSoundProfile(
             characterPreset = this,
             roomPreset = RoomAmbiencePreset.ARENA_VERB,
-            punchAmount = 0.88f,
-            warmthTone = 0.36f,
+            punchAmount = 0.90f,
+            warmthTone = 0.52f,
             padSettings = mapOf(
-                DrumPadId.KICK_LEFT to PadMixSetting(volume = 1.15f, pitchSemitones = -0.5f),
-                DrumPadId.KICK_RIGHT to PadMixSetting(volume = 1.15f, pitchSemitones = -0.5f),
-                DrumPadId.SNARE to PadMixSetting(volume = 1.15f, pitchSemitones = -0.5f),
-                DrumPadId.TOM_HIGH to PadMixSetting(volume = 1.08f, pitchSemitones = -1.0f),
-                DrumPadId.TOM_MID to PadMixSetting(volume = 1.08f, pitchSemitones = -1.0f),
-                DrumPadId.TOM_FLOOR to PadMixSetting(volume = 1.12f, pitchSemitones = -1.5f),
-                DrumPadId.CRASH to PadMixSetting(volume = 1.05f, pitchSemitones = 0f)
+                DrumPadId.KICK_LEFT to PadMixSetting(volume = 1.18f, pitchSemitones = -0.5f),
+                DrumPadId.KICK_RIGHT to PadMixSetting(volume = 1.18f, pitchSemitones = -0.5f),
+                DrumPadId.SNARE to PadMixSetting(volume = 1.16f, pitchSemitones = -0.5f),
+                DrumPadId.TOM_HIGH to PadMixSetting(volume = 1.10f, pitchSemitones = -1.0f),
+                DrumPadId.TOM_MID to PadMixSetting(volume = 1.10f, pitchSemitones = -1.0f),
+                DrumPadId.TOM_FLOOR to PadMixSetting(volume = 1.14f, pitchSemitones = -1.5f),
+                DrumPadId.CRASH to PadMixSetting(volume = 1.04f, pitchSemitones = -1.5f),
+                DrumPadId.RIDE to PadMixSetting(volume = 0.98f, pitchSemitones = -1.0f)
             )
         )
     }

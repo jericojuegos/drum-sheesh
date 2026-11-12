@@ -18,9 +18,9 @@ import kotlin.math.sqrt
 /**
  * Pure-Kotlin procedural 16-bit 44.1kHz mono RIFF WAV drum synthesizer.
  *
- * Synthesizes multi-mode acoustic & electronic percussion buffers with room reflections,
- * transient punch shaping, and tonal warmth for all 10 [DrumPadId] pads across all 4 [DrumKitId] kits
- * with zero external binary assets and zero Android dependencies.
+ * Models close-mic'd shells (Bessel drumhead modes, pink-noise snare wire rattle, warm beater thump),
+ * full-bodied bronze cymbals (pink-noise roar + low-mid gong body without shrill whistling peaks),
+ * and an overhead studio/arena room-mic reflection & compression stage with zero Android dependencies.
  */
 object ProceduralDrumSynthesizer {
     const val SAMPLE_RATE_HZ: Int = 44100
@@ -37,6 +37,43 @@ object ProceduralDrumSynthesizer {
     ): ByteArray {
         val pcmSamples = synthesizePcmSamples(kitId, padId, profile)
         return encodeRiffWav(pcmSamples, SAMPLE_RATE_HZ)
+    }
+
+    /**
+     * Shapes a real 16-bit PCM RIFF WAV recording using [profile] room ambience, punch, and warmth.
+     */
+    fun processWavWithProfile(
+        wavBytes: ByteArray,
+        padId: DrumPadId,
+        profile: DrumSoundProfile
+    ): ByteArray {
+        val dryMono = decodeRiffWavMono(wavBytes) ?: return wavBytes
+        val roomTailSec = when {
+            padId == DrumPadId.HI_HAT_CLOSED -> profile.roomPreset.decaySeconds * 0.22
+            profile.roomPreset == RoomAmbiencePreset.DRY_BOOTH -> 0.05
+            else -> profile.roomPreset.decaySeconds * 0.60
+        }
+        val extraTailSamples = (SAMPLE_RATE_HZ * roomTailSec).toInt()
+        val maxSamples = (SAMPLE_RATE_HZ * 1.85).toInt()
+        val totalSamples = (dryMono.size + extraTailSamples).coerceAtMost(maxSamples).coerceAtLeast(1024)
+        val drySignal = DoubleArray(totalSamples)
+
+        val punch = profile.clampedPunch.toDouble()
+        val copyCount = min(dryMono.size, totalSamples)
+        for (i in 0 until copyCount) {
+            val t = i.toDouble() / SAMPLE_RATE_HZ.toDouble()
+            // Transient-weighted punch boost preserves studio stick crack and kick thump
+            val transientBoost = 1.0 + (punch - 0.5) * 0.42 * exp(-t * 28.0)
+            drySignal[i] = softClip(dryMono[i] * transientBoost)
+        }
+
+        val samples = finalizeSamples(
+            drySignal = drySignal,
+            padId = padId,
+            profile = profile,
+            attackFadeSamples = 16
+        )
+        return encodeRiffWav(samples, SAMPLE_RATE_HZ)
     }
 
     /**
@@ -58,234 +95,301 @@ object ProceduralDrumSynthesizer {
     ): ShortArray {
         val dryDurationSec = dryDurationSecondsFor(kitId, padId)
         val roomTailSec = when {
-            padId == DrumPadId.HI_HAT_CLOSED -> profile.roomPreset.decaySeconds * 0.25
-            profile.roomPreset == RoomAmbiencePreset.DRY_BOOTH -> 0.04
-            else -> profile.roomPreset.decaySeconds * 0.60
+            padId == DrumPadId.HI_HAT_CLOSED -> profile.roomPreset.decaySeconds * 0.22
+            profile.roomPreset == RoomAmbiencePreset.DRY_BOOTH -> 0.05
+            else -> profile.roomPreset.decaySeconds * 0.68
         }
-        val totalDurationSec = (dryDurationSec + roomTailSec).coerceAtMost(1.25)
+        val totalDurationSec = (dryDurationSec + roomTailSec).coerceAtMost(1.38)
         val numSamples = (SAMPLE_RATE_HZ * totalDurationSec).toInt().coerceAtLeast(1024)
         val drySignal = DoubleArray(numSamples)
 
         val punch = profile.clampedPunch.toDouble()
-        val warmth = profile.clampedWarmth.toDouble()
 
-        // Deterministic LCG PRNG seeded per (kitId, padId) so synthesis is 100% reproducible
+        // Deterministic LCG PRNG seeded per (kitId, padId) + second decorrelated stream for cymbal turbulence
         var noiseState = (kitId.ordinal + 1) * 1_103_515_245L + (padId.ordinal + 1) * 12_345L
-        fun nextNoise(): Double {
+        var noiseState2 = (kitId.ordinal + 7) * 2_140_132_611L + (padId.ordinal + 13) * 98_765L
+        fun nextWhiteNoise(): Double {
             noiseState = (noiseState * 6364136223846793005L + 1442695040888963407L)
             val bits = (noiseState ushr 33).toInt()
             return (bits.toDouble() / Int.MAX_VALUE.toDouble()).coerceIn(-1.0, 1.0)
         }
+        fun nextWhiteNoise2(): Double {
+            noiseState2 = (noiseState2 * 6364136223846793005L + 1442695040888963407L)
+            val bits = (noiseState2 ushr 33).toInt()
+            return (bits.toDouble() / Int.MAX_VALUE.toDouble()).coerceIn(-1.0, 1.0)
+        }
 
-        // State-variable & 1-pole filter states for realistic snare-wire / beater / bronze shaping
+        // Paul Kellet 3-stage pink noise state (-3dB/oct natural acoustic spectrum)
+        var pinkB0 = 0.0
+        var pinkB1 = 0.0
+        var pinkB2 = 0.0
+        fun nextPinkNoise(white: Double): Double {
+            pinkB0 = 0.99765 * pinkB0 + white * 0.0990460
+            pinkB1 = 0.96300 * pinkB1 + white * 0.2965164
+            pinkB2 = 0.57000 * pinkB2 + white * 1.0526913
+            return ((pinkB0 + pinkB1 + pinkB2 + white * 0.1848) * 0.24).coerceIn(-1.0, 1.0)
+        }
+
         var phase1 = 0.0
         var phase2 = 0.0
         var phase3 = 0.0
         var phase4 = 0.0
-        var prevNoise = 0.0
-        var bpLow = 0.0
-        var bpBand = 0.0
+        var prevPink = 0.0
+        var prevWhite2 = 0.0
 
-        // Center frequency for SVF bandpass (used for snare wire sizzle & beater wood transient)
-        val svfFreq = when (padId) {
-            DrumPadId.SNARE -> if (kitId == DrumKitId.VINTAGE_BREAKBEAT) 2550.0 else 3350.0
-            DrumPadId.KICK_LEFT, DrumPadId.KICK_RIGHT -> 1950.0
-            DrumPadId.HI_HAT_CLOSED, DrumPadId.HI_HAT_OPEN -> 7600.0
-            DrumPadId.CRASH, DrumPadId.RIDE -> 5900.0
-            else -> 2100.0
-        }
-        val svfF = 2.0 * sin(PI * svfFreq / SAMPLE_RATE_HZ)
-        val svfQ = when (padId) {
-            DrumPadId.SNARE -> 0.85
-            DrumPadId.KICK_LEFT, DrumPadId.KICK_RIGHT -> 0.70
-            else -> 0.95
-        }
+        // Triple SVF bandpass filters: Low-Mid Body, Mid Splash, Presence/Air
+        var lowMidLow = 0.0
+        var lowMidBand = 0.0
+        var midLow = 0.0
+        var midBand = 0.0
+        var highLow = 0.0
+        var highBand = 0.0
 
-        val punchDrive = 0.85 + punch * 0.55
+        val lowMidCenterHz = when (padId) {
+            DrumPadId.CRASH -> 520.0
+            DrumPadId.RIDE -> 680.0
+            DrumPadId.HI_HAT_OPEN -> 950.0
+            DrumPadId.HI_HAT_CLOSED -> 1300.0
+            else -> 480.0
+        }
+        val midCenterHz = when (padId) {
+            DrumPadId.CRASH -> 1480.0
+            DrumPadId.RIDE -> 1720.0
+            DrumPadId.HI_HAT_OPEN -> 2650.0
+            DrumPadId.HI_HAT_CLOSED -> 3350.0
+            DrumPadId.SNARE -> 1150.0
+            else -> 720.0
+        }
+        val highCenterHz = when (padId) {
+            DrumPadId.CRASH -> 3450.0
+            DrumPadId.RIDE -> 3900.0
+            DrumPadId.HI_HAT_OPEN -> 5200.0
+            DrumPadId.HI_HAT_CLOSED -> 5900.0
+            DrumPadId.SNARE -> if (kitId == DrumKitId.VINTAGE_BREAKBEAT) 2150.0 else 2750.0
+            DrumPadId.KICK_LEFT, DrumPadId.KICK_RIGHT -> 1550.0
+            else -> 1650.0
+        }
+        val lowMidF = 2.0 * sin(PI * lowMidCenterHz / SAMPLE_RATE_HZ)
+        val midF = 2.0 * sin(PI * midCenterHz / SAMPLE_RATE_HZ)
+        val highF = 2.0 * sin(PI * highCenterHz / SAMPLE_RATE_HZ)
+        val lowMidQ = 0.56
+        val midQ = if (padId == DrumPadId.CRASH) 0.58 else 0.72
+        val highQ = if (padId == DrumPadId.CRASH) 0.64 else 0.82
+
+        val punchDrive = 0.88 + punch * 0.55
 
         for (i in 0 until numSamples) {
             val t = i.toDouble() / SAMPLE_RATE_HZ.toDouble()
-            val noise = nextNoise()
-            val highPassedNoise = noise - 0.86 * prevNoise
-            prevNoise = noise
+            val white = nextWhiteNoise()
+            val white2 = nextWhiteNoise2()
+            val pink = nextPinkNoise(white)
+            val crispPink = pink - 0.55 * prevPink
+            prevPink = pink
+            val hpWhite2 = white2 - 0.65 * prevWhite2
+            prevWhite2 = white2
 
-            // Run 2-pole SVF bandpass for crisp acoustic noise shaping
-            val svfHigh = noise - bpLow - svfQ * bpBand
-            bpBand += svfF * svfHigh
-            bpLow += svfF * bpBand
+            val lmHigh = pink - lowMidLow - lowMidQ * lowMidBand
+            lowMidBand += lowMidF * lmHigh
+            lowMidLow += lowMidF * lowMidBand
+
+            val midHigh = pink - midLow - midQ * midBand
+            midBand += midF * midHigh
+            midLow += midF * midBand
+
+            val hiHigh = pink - highLow - highQ * highBand
+            highBand += highF * hiHigh
+            highLow += highF * highBand
 
             val sample = when (padId) {
                 DrumPadId.KICK_LEFT, DrumPadId.KICK_RIGHT -> {
                     val isLeft = padId == DrumPadId.KICK_LEFT
                     val pitchOffset = if (isLeft) 1.045 else 1.0
                     val (startFreq, endFreq, punchDecay, subDecay, baseDrive) = when (kitId) {
-                        DrumKitId.ACOUSTIC_STUDIO -> Quintuple(162.0, 52.0, 34.0, 8.2, 1.32)
-                        DrumKitId.TRAP_808 -> Quintuple(172.0, 38.0, 36.0, 2.7, 1.55)
-                        DrumKitId.VINTAGE_BREAKBEAT -> Quintuple(156.0, 56.0, 31.0, 9.6, 1.45)
-                        DrumKitId.SYNTHWAVE_ELECTRONIC -> Quintuple(196.0, 46.0, 25.0, 6.2, 1.42)
+                        DrumKitId.ACOUSTIC_STUDIO -> Quintuple(168.0, 52.0, 34.0, 7.6, 1.38)
+                        DrumKitId.TRAP_808 -> Quintuple(175.0, 38.0, 36.0, 2.6, 1.55)
+                        DrumKitId.VINTAGE_BREAKBEAT -> Quintuple(158.0, 56.0, 30.0, 9.0, 1.48)
+                        DrumKitId.SYNTHWAVE_ELECTRONIC -> Quintuple(198.0, 46.0, 25.0, 6.0, 1.44)
                     }
                     val instFreq = (endFreq + (startFreq - endFreq) * exp(-t * punchDecay)) * pitchOffset
                     phase1 += TWO_PI * instFreq / SAMPLE_RATE_HZ
                     phase2 += TWO_PI * (instFreq * 2.0) / SAMPLE_RATE_HZ
 
                     val subBody = sin(phase1) * exp(-t * subDecay)
-                    // Chest harmonic gives clear punch on mobile speakers as well as headphones
-                    val chestHarmony = sin(phase2) * exp(-t * (subDecay * 1.9)) * (0.32 + punch * 0.14)
-                    // Batter head thump + felt/wood beater snap
-                    val headThump = sin(TWO_PI * (185.0 * pitchOffset) * t) * exp(-t * 48.0) * (0.28 + punch * 0.18)
+                    // Close-mic chest harmonic (~95-115Hz) + batter-head thump for full phone-speaker weight
+                    val chestHarmony = sin(phase2) * exp(-t * (subDecay * 1.75)) * (0.38 + punch * 0.14)
+                    val headThump = sin(TWO_PI * (155.0 * pitchOffset) * t) * exp(-t * 40.0) * (0.32 + punch * 0.16)
                     val beaterSnap = (
-                        sin(TWO_PI * 1950.0 * t) * 0.45 +
-                            bpBand * 0.75
-                        ) * exp(-t * 145.0) * (0.30 + punch * 0.32)
+                        sin(TWO_PI * 1350.0 * t) * 0.36 +
+                            highBand * 0.72
+                        ) * exp(-t * 135.0) * (0.28 + punch * 0.30)
 
                     softClip((subBody + chestHarmony + headThump + beaterSnap) * baseDrive * punchDrive)
                 }
 
                 DrumPadId.SNARE -> {
                     val (bodyFreq, wireMix, bodyDecay, wireDecay, baseDrive) = when (kitId) {
-                        DrumKitId.ACOUSTIC_STUDIO -> Quintuple(194.0, 0.78, 17.0, 10.5, 1.35)
-                        DrumKitId.TRAP_808 -> Quintuple(238.0, 0.88, 25.0, 14.0, 1.55)
-                        DrumKitId.VINTAGE_BREAKBEAT -> Quintuple(182.0, 0.72, 20.0, 13.0, 1.48)
-                        DrumKitId.SYNTHWAVE_ELECTRONIC -> Quintuple(174.0, 0.84, 13.5, 6.8, 1.45)
+                        DrumKitId.ACOUSTIC_STUDIO -> Quintuple(188.0, 0.85, 15.5, 9.8, 1.40)
+                        DrumKitId.TRAP_808 -> Quintuple(232.0, 0.90, 24.0, 13.5, 1.55)
+                        DrumKitId.VINTAGE_BREAKBEAT -> Quintuple(178.0, 0.78, 18.5, 12.0, 1.50)
+                        DrumKitId.SYNTHWAVE_ELECTRONIC -> Quintuple(172.0, 0.88, 13.0, 6.6, 1.46)
                     }
-                    val instFreq = bodyFreq + 112.0 * exp(-t * 46.0)
+                    val instFreq = bodyFreq + 110.0 * exp(-t * 45.0)
                     phase1 += TWO_PI * instFreq / SAMPLE_RATE_HZ
-                    // Circular drumhead Bessel overtones (1.00, 1.593, 2.136)
                     phase2 += TWO_PI * (instFreq * 1.593) / SAMPLE_RATE_HZ
                     phase3 += TWO_PI * (instFreq * 2.136) / SAMPLE_RATE_HZ
 
                     val membrane = (
-                        sin(phase1) * 0.62 +
-                            sin(phase2) * 0.25 +
-                            sin(phase3) * 0.13
+                        sin(phase1) * 0.65 +
+                            sin(phase2) * 0.24 +
+                            sin(phase3) * 0.11
                         ) * exp(-t * bodyDecay)
 
-                    // Snare wire sizzle: resonant bandpass wires + subtle 178Hz buzz + airy crispness
-                    val wireFlutter = 0.82 + 0.18 * sin(TWO_PI * 178.0 * t)
-                    val shapedWires = (bpBand * 0.78 + highPassedNoise * 0.36) *
-                        wireFlutter * exp(-t * wireDecay) * wireMix
-                    val stickCrack = (sin(TWO_PI * 2850.0 * t) * 0.42 + bpBand * 0.48) *
-                        exp(-t * 185.0) * (0.28 + punch * 0.32)
+                    // Thick close-mic'd bottom snare wires built from warm pink noise + subtle 172Hz buzz
+                    val wireBuzz = 0.84 + 0.16 * sin(TWO_PI * 172.0 * t)
+                    val snareWires = (midBand * 0.45 + highBand * 0.75 + crispPink * 0.30) *
+                        wireBuzz * exp(-t * wireDecay) * wireMix
+                    val stickCrack = (sin(TWO_PI * 2150.0 * t) * 0.35 + highBand * 0.55) *
+                        exp(-t * 170.0) * (0.30 + punch * 0.32)
 
-                    softClip((membrane + shapedWires + stickCrack) * baseDrive * punchDrive)
+                    softClip((membrane + snareWires + stickCrack) * baseDrive * punchDrive)
                 }
 
                 DrumPadId.TOM_HIGH, DrumPadId.TOM_MID, DrumPadId.TOM_FLOOR -> {
                     val baseFreq = when (padId) {
-                        DrumPadId.TOM_HIGH -> 162.0
-                        DrumPadId.TOM_MID -> 118.0
-                        else -> 82.0
+                        DrumPadId.TOM_HIGH -> 158.0
+                        DrumPadId.TOM_MID -> 116.0
+                        else -> 80.0
                     }
                     val (freqScale, pitchSweep, decayRate, noiseSnap, baseDrive) = when (kitId) {
-                        DrumKitId.ACOUSTIC_STUDIO -> Quintuple(1.0, 68.0, 6.8, 0.26, 1.28)
-                        DrumKitId.TRAP_808 -> Quintuple(0.92, 85.0, 8.6, 0.20, 1.42)
-                        DrumKitId.VINTAGE_BREAKBEAT -> Quintuple(1.04, 54.0, 8.8, 0.30, 1.38)
-                        DrumKitId.SYNTHWAVE_ELECTRONIC -> Quintuple(0.96, 118.0, 5.4, 0.36, 1.45)
+                        DrumKitId.ACOUSTIC_STUDIO -> Quintuple(1.0, 68.0, 6.4, 0.26, 1.32)
+                        DrumKitId.TRAP_808 -> Quintuple(0.92, 85.0, 8.2, 0.20, 1.44)
+                        DrumKitId.VINTAGE_BREAKBEAT -> Quintuple(1.04, 54.0, 8.2, 0.30, 1.40)
+                        DrumKitId.SYNTHWAVE_ELECTRONIC -> Quintuple(0.96, 118.0, 5.2, 0.34, 1.46)
                     }
                     val instFreq = baseFreq * freqScale + pitchSweep * exp(-t * 30.0)
                     phase1 += TWO_PI * instFreq / SAMPLE_RATE_HZ
-                    // Circular Bessel drumhead overtones for real resonant shell tone
                     phase2 += TWO_PI * (instFreq * 1.593) / SAMPLE_RATE_HZ
                     phase3 += TWO_PI * (instFreq * 2.136) / SAMPLE_RATE_HZ
-                    phase4 += TWO_PI * (instFreq * 2.295) / SAMPLE_RATE_HZ
+                    phase4 += TWO_PI * (instFreq * 0.992) / SAMPLE_RATE_HZ
 
-                    val fundamental = sin(phase1) * exp(-t * decayRate)
+                    val fundamental = (sin(phase1) * 0.78 + sin(phase4) * 0.22) * exp(-t * decayRate)
                     val shellOvertone = (
-                        sin(phase2) * 0.55 +
-                            sin(phase3) * 0.28 +
-                            sin(phase4) * 0.17
+                        sin(phase2) * 0.62 +
+                            sin(phase3) * 0.38
                         ) * exp(-t * (decayRate * 1.55)) * 0.34
-                    val stickAttack = (bpBand * 0.65 + highPassedNoise * 0.40) *
-                        exp(-t * 105.0) * (noiseSnap + punch * 0.18)
+                    val stickAttack = (midBand * 0.55 + highBand * 0.45) *
+                        exp(-t * 100.0) * (noiseSnap + punch * 0.20)
 
                     softClip((fundamental + shellOvertone + stickAttack) * baseDrive * punchDrive)
                 }
 
                 DrumPadId.HI_HAT_CLOSED -> {
                     val decayRate = when (kitId) {
-                        DrumKitId.ACOUSTIC_STUDIO -> 40.0
+                        DrumKitId.ACOUSTIC_STUDIO -> 42.0
                         DrumKitId.TRAP_808 -> 55.0
                         DrumKitId.VINTAGE_BREAKBEAT -> 36.0
                         DrumKitId.SYNTHWAVE_ELECTRONIC -> 32.0
                     }
-                    val bronze = bronzeCymbalMatrix(t * 1.12, kitId)
-                    val air = (bpBand * 0.65 + highPassedNoise * 0.45)
-                    val chick = (bronze * 0.44 + air * 0.72) * exp(-t * decayRate)
-                    val transient = air * exp(-t * 165.0) * (0.20 + punch * 0.22)
-                    softClip((chick + transient) * 1.28)
+                    // Bell-free dual-noise bronze turbulence + tight chick air
+                    val turbulence = softClip((midBand * 0.75 + highBand * 0.65) * (1.0 + hpWhite2 * 0.85))
+                    val chick = (turbulence * 0.58 + highBand * 0.52 + crispPink * 0.36) * exp(-t * decayRate)
+                    val stickTip = (midBand * 0.65 + lowMidBand * 0.25) * exp(-t * 165.0) * (0.26 + punch * 0.22)
+                    softClip((chick + stickTip) * 1.32)
                 }
 
                 DrumPadId.HI_HAT_OPEN -> {
                     val decayRate = when (kitId) {
-                        DrumKitId.ACOUSTIC_STUDIO -> 5.2
-                        DrumKitId.TRAP_808 -> 6.4
-                        DrumKitId.VINTAGE_BREAKBEAT -> 5.8
-                        DrumKitId.SYNTHWAVE_ELECTRONIC -> 4.6
+                        DrumKitId.ACOUSTIC_STUDIO -> 5.0
+                        DrumKitId.TRAP_808 -> 6.2
+                        DrumKitId.VINTAGE_BREAKBEAT -> 5.5
+                        DrumKitId.SYNTHWAVE_ELECTRONIC -> 4.5
                     }
-                    val pairBeat = 0.88 + 0.12 * sin(TWO_PI * 13.5 * t)
-                    val bronze = bronzeCymbalMatrix(t, kitId)
-                    val air = (bpBand * 0.58 + highPassedNoise * 0.48)
-                    val sizzle = (bronze * 0.48 + air * 0.62) * pairBeat * exp(-t * decayRate)
-                    val attack = air * exp(-t * 90.0) * (0.18 + punch * 0.20)
-                    softClip((sizzle + attack) * 1.18)
+                    val pairBeat = 0.88 + 0.12 * sin(TWO_PI * 11.5 * t)
+                    val turbulence = softClip((midBand * 0.70 + highBand * 0.60) * (1.0 + hpWhite2 * 0.80))
+                    val sizzle = (turbulence * 0.52 + lowMidBand * 0.28 + highBand * 0.48 + crispPink * 0.32) *
+                        pairBeat * exp(-t * decayRate)
+                    val stickAttack = (midBand * 0.60 + lowMidBand * 0.30) * exp(-t * 95.0) * (0.25 + punch * 0.22)
+                    softClip((sizzle + stickAttack) * 1.26)
                 }
 
                 DrumPadId.CRASH -> {
                     val decayRate = when (kitId) {
-                        DrumKitId.ACOUSTIC_STUDIO -> 3.0
-                        DrumKitId.TRAP_808 -> 3.9
-                        DrumKitId.VINTAGE_BREAKBEAT -> 3.5
-                        DrumKitId.SYNTHWAVE_ELECTRONIC -> 2.8
+                        DrumKitId.ACOUSTIC_STUDIO -> 2.10
+                        DrumKitId.TRAP_808 -> 2.80
+                        DrumKitId.VINTAGE_BREAKBEAT -> 2.45
+                        DrumKitId.SYNTHWAVE_ELECTRONIC -> 2.00
                     }
-                    val bloomEnv = min(1.0, t / 0.014) * exp(-t * decayRate)
-                    val bronze = bronzeCymbalMatrix(t * 0.88, kitId)
-                    val airWash = (bpBand * 0.55 + highPassedNoise * 0.55)
-                    val stickPing = sin(TWO_PI * 2460.0 * t) * exp(-t * 42.0) * (0.20 + punch * 0.15)
-                    val shimmer = (bronze * 0.45 + airWash * 0.65) * bloomEnv
-                    softClip((shimmer + stickPing) * 1.22)
+                    // Zero sine waves -> zero bell/gong pitch! Pure chaotic multi-band bronze splash
+                    val bloomEnv = (0.45 + 0.55 * min(1.0, t / 0.020)) * exp(-t * decayRate)
+                    val highShimmerEnv = exp(-t * (decayRate * 1.45))
+
+                    // Chaos brass turbulence from saturating & cross-modulating two noise streams
+                    val chaosSplash = softClip((lowMidBand * 0.75 + midBand * 0.85) * (1.0 + hpWhite2 * 0.90))
+                    val bodyRoar = (lowMidBand * 0.88 + midBand * 0.78 + pink * 0.36) * bloomEnv
+                    val airWash = (highBand * 0.62 + crispPink * 0.26) * highShimmerEnv
+                    val stickBurst = (lowMidBand * 0.85 + midBand * 0.65) *
+                        exp(-t * 44.0) * (0.34 + punch * 0.26)
+
+                    softClip((chaosSplash * bloomEnv * 0.62 + bodyRoar * 0.82 + airWash + stickBurst) * 1.32)
                 }
 
                 DrumPadId.RIDE -> {
                     val decayRate = when (kitId) {
-                        DrumKitId.ACOUSTIC_STUDIO -> 3.3
-                        DrumKitId.TRAP_808 -> 4.4
-                        DrumKitId.VINTAGE_BREAKBEAT -> 3.8
-                        DrumKitId.SYNTHWAVE_ELECTRONIC -> 3.1
+                        DrumKitId.ACOUSTIC_STUDIO -> 2.9
+                        DrumKitId.TRAP_808 -> 3.6
+                        DrumKitId.VINTAGE_BREAKBEAT -> 3.2
+                        DrumKitId.SYNTHWAVE_ELECTRONIC -> 2.7
                     }
-                    val bronze = bronzeCymbalMatrix(t * 1.05, kitId)
-                    val bellPing = (
-                        sin(TWO_PI * 2680.0 * t + sin(TWO_PI * 4120.0 * t) * 0.35) * 0.65 +
-                            sin(TWO_PI * 3940.0 * t) * 0.35
-                        ) * exp(-t * 15.0) * (0.48 + punch * 0.16)
-                    val wash = (bronze * 0.46 + bpBand * 0.38 + highPassedNoise * 0.24) * exp(-t * decayRate)
-                    softClip((bellPing + wash) * 1.22)
+                    val woodStick = (
+                        sin(TWO_PI * 1380.0 * t + pink * 0.22) * 0.48 +
+                            midBand * 0.62
+                        ) * exp(-t * 22.0) * (0.45 + punch * 0.16)
+                    val chaosWash = softClip((lowMidBand * 0.55 + midBand * 0.70 + highBand * 0.45) * (1.0 + hpWhite2 * 0.65))
+                    val bowWash = (chaosWash * 0.58 + lowMidBand * 0.42 + highBand * 0.34) * exp(-t * decayRate)
+                    softClip((woodStick + bowWash) * 1.26)
                 }
             }
 
             drySignal[i] = sample
         }
 
+        return finalizeSamples(
+            drySignal = drySignal,
+            padId = padId,
+            profile = profile,
+            attackFadeSamples = 52
+        )
+    }
+
+    private fun finalizeSamples(
+        drySignal: DoubleArray,
+        padId: DrumPadId,
+        profile: DrumSoundProfile,
+        attackFadeSamples: Int
+    ): ShortArray {
         val processed = applyToneAndRoom(
             drySignal = drySignal,
             padId = padId,
             profile = profile,
-            warmth = warmth
+            warmth = profile.clampedWarmth.toDouble()
         )
 
+        val numSamples = processed.size
         val samples = ShortArray(numSamples)
+        val attackDivisor = attackFadeSamples.coerceAtLeast(1).toDouble()
         for (i in 0 until numSamples) {
-            val attackEnv = min(1.0, i.toDouble() / 56.0)
+            val attackEnv = min(1.0, i.toDouble() / attackDivisor)
             val tailRemaining = (numSamples - 1 - i).toDouble()
-            val releaseEnv = min(1.0, tailRemaining / 440.0)
-            val shaped = softClip(processed[i]) * attackEnv * releaseEnv * 30000.0
+            val releaseEnv = min(1.0, tailRemaining / 560.0)
+            val shaped = softClip(processed[i]) * attackEnv * releaseEnv * 30200.0
             samples[i] = shaped.toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
         }
-
         return samples
     }
 
     /**
-     * Applies variable tonal warmth/brightness tilt plus a 4-comb + allpass studio room stage.
+     * Applies variable tonal warmth/brightness tilt, gentle top-end phone-speaker smoothing,
+     * early studio reflections, 5-comb + 2-allpass room ambience, and parallel room-mic bus compression.
      */
     private fun applyToneAndRoom(
         drySignal: DoubleArray,
@@ -296,87 +400,133 @@ object ProceduralDrumSynthesizer {
         val n = drySignal.size
         val out = DoubleArray(n)
 
-        // 1. Variable Warmth / Brightness Tilt Filter
-        val lpAlpha = (0.62 - warmth * 0.44).coerceIn(0.14, 0.70)
+        // 1. Variable Warmth / Brightness Tilt + silky 9.5kHz top-end smoothing for cymbals
+        val cymbalBaseWarmth = if (padId == DrumPadId.CRASH || padId == DrumPadId.RIDE) {
+            max(warmth, 0.52)
+        } else {
+            warmth
+        }
+        val lpAlpha = (0.64 - cymbalBaseWarmth * 0.44).coerceIn(0.14, 0.72)
         var lpState = 0.0
-        val airBoost = (0.5 - warmth).coerceAtLeast(0.0) * 0.45
+        var smoothState = 0.0
+        val airBoost = (0.45 - warmth).coerceAtLeast(0.0) * 0.35
 
-        // 2. Prime-spaced studio room comb delays (~23ms, ~31ms, ~39ms, ~49ms at 44.1kHz)
-        val combDelays = intArrayOf(1013, 1367, 1721, 2161)
+        // 2. Early Studio / Arena Wall Reflections (samples at 44.1kHz: ~8ms, 15ms, 23ms, 34ms)
+        val erDelays = intArrayOf(353, 661, 1013, 1499)
+        val erGains = doubleArrayOf(0.42, 0.32, 0.24, 0.18)
+        val erBuffer = DoubleArray(1600)
+        var erIdx = 0
+
+        // 3. Five Prime Comb Delays (~29ms, ~37ms, ~47ms, ~61ms, ~73ms) + 2 Allpass Diffusers
+        val combDelays = intArrayOf(1279, 1637, 2081, 2689, 3221)
         val combBuffers = Array(combDelays.size) { DoubleArray(combDelays[it]) }
         val combIndices = IntArray(combDelays.size)
         val combLpStates = DoubleArray(combDelays.size)
 
+        val ap1Delay = 223
+        val ap2Delay = 89
+        val ap1Buf = DoubleArray(ap1Delay)
+        val ap2Buf = DoubleArray(ap2Delay)
+        var ap1Idx = 0
+        var ap2Idx = 0
+
         val wetTarget = profile.roomPreset.wetMix.toDouble()
         val effectiveWet = when (padId) {
-            DrumPadId.KICK_LEFT, DrumPadId.KICK_RIGHT -> wetTarget * 0.55
-            DrumPadId.HI_HAT_CLOSED -> wetTarget * 0.50
-            DrumPadId.CRASH, DrumPadId.RIDE, DrumPadId.HI_HAT_OPEN -> wetTarget * 0.72
+            DrumPadId.KICK_LEFT, DrumPadId.KICK_RIGHT -> wetTarget * 0.62
+            DrumPadId.HI_HAT_CLOSED -> wetTarget * 0.55
+            DrumPadId.CRASH -> wetTarget * 0.92
             else -> wetTarget
         }
         val decayNorm = profile.roomPreset.decaySeconds.toDouble().coerceIn(0.12, 0.90)
-        val baseFeedback = (0.34 + decayNorm * 0.42).coerceAtMost(0.74)
+        val baseFeedback = (0.38 + decayNorm * 0.44).coerceAtMost(0.79)
         val damping = profile.roomPreset.damping.toDouble().coerceIn(0.15, 0.75)
 
-        // Allpass diffuser (223 samples ~5ms)
-        val apDelay = 223
-        val apBuffer = DoubleArray(apDelay)
-        var apIdx = 0
-
-        // Tight low-cut on reverb send so sub-bass kicks stay punchy without muddy boom
+        // Tight low-cut on kick reverb send so arena kick booms cleanly without mud
         var sendHpPrevIn = 0.0
         var sendHpPrevOut = 0.0
+        // Room-mic bus compressor envelope follower
+        var roomEnv = 0.0
 
         for (i in 0 until n) {
             val raw = drySignal[i]
             lpState += lpAlpha * (raw - lpState)
             val hp = raw - lpState
-            val toned = when {
-                warmth > 0.55 -> raw * (1.0 - (warmth - 0.5) * 0.75) + lpState * ((warmth - 0.5) * 0.75)
+            val tonedRaw = when {
+                cymbalBaseWarmth > 0.52 ->
+                    raw * (1.0 - (cymbalBaseWarmth - 0.5) * 0.72) + lpState * ((cymbalBaseWarmth - 0.5) * 0.72)
                 else -> raw + hp * airBoost
             }
+            // Gentle 1-pole ultrasonic tame (~10kHz) to keep mobile speakers smooth
+            smoothState += 0.72 * (tonedRaw - smoothState)
+            val toned = smoothState
 
             if (effectiveWet <= 0.01) {
                 out[i] = toned
                 continue
             }
 
-            val sendHp = toned - sendHpPrevIn + 0.96 * sendHpPrevOut
+            val sendHp = toned - sendHpPrevIn + 0.955 * sendHpPrevOut
             sendHpPrevIn = toned
             sendHpPrevOut = sendHp
-            val reverbSend = if (padId == DrumPadId.KICK_LEFT || padId == DrumPadId.KICK_RIGHT) {
+            val roomSend = if (padId == DrumPadId.KICK_LEFT || padId == DrumPadId.KICK_RIGHT) {
                 sendHp
             } else {
                 toned
             }
 
+            // Early reflections tap buffer
+            erBuffer[erIdx] = roomSend
+            var erSum = 0.0
+            for (e in erDelays.indices) {
+                val readPos = (erIdx - erDelays[e] + erBuffer.size) % erBuffer.size
+                erSum += erBuffer[readPos] * erGains[e]
+            }
+            erIdx = (erIdx + 1) % erBuffer.size
+
+            // Dense late reverb combs
             var combSum = 0.0
             for (c in combDelays.indices) {
                 val buf = combBuffers[c]
                 val idx = combIndices[c]
                 val delayed = buf[idx]
                 combLpStates[c] = delayed * (1.0 - damping) + combLpStates[c] * damping
-                buf[idx] = reverbSend + combLpStates[c] * baseFeedback
+                buf[idx] = roomSend + combLpStates[c] * baseFeedback
                 combIndices[c] = (idx + 1) % combDelays[c]
                 combSum += delayed
             }
             val avgComb = combSum / combDelays.size.toDouble()
 
-            val apOut = -avgComb + apBuffer[apIdx]
-            apBuffer[apIdx] = avgComb + apOut * 0.5
-            apIdx = (apIdx + 1) % apDelay
+            val ap1Out = -avgComb + ap1Buf[ap1Idx]
+            ap1Buf[ap1Idx] = avgComb + ap1Out * 0.5
+            ap1Idx = (ap1Idx + 1) % ap1Delay
 
-            out[i] = toned * (1.0 - effectiveWet * 0.25) + apOut * effectiveWet
+            val ap2Out = -ap1Out + ap2Buf[ap2Idx]
+            ap2Buf[ap2Idx] = ap1Out + ap2Out * 0.5
+            ap2Idx = (ap2Idx + 1) % ap2Delay
+
+            val rawRoom = erSum * 0.52 + ap2Out * 0.85
+
+            // Overhead / Room-Mic Compressor: brings up tail bloom smoothly on studio & arena presets
+            val absRoom = abs(rawRoom)
+            roomEnv = if (absRoom > roomEnv) {
+                roomEnv * 0.92 + absRoom * 0.08
+            } else {
+                roomEnv * 0.9985 + absRoom * 0.0015
+            }
+            val compGain = (1.15 / (1.0 + roomEnv * 1.4)).coerceIn(0.45, 1.35)
+            val compressedRoom = softClip(rawRoom * compGain)
+
+            out[i] = toned * (1.0 - effectiveWet * 0.18) + compressedRoom * effectiveWet
         }
 
-        // Prevent peak collapse when room + drive stack
+        // Peak safety
         var maxAbs = 0.0
         for (v in out) {
             val a = abs(v)
             if (a > maxAbs) maxAbs = a
         }
-        if (maxAbs > 1.35) {
-            val norm = 1.35 / maxAbs
+        if (maxAbs > 1.32) {
+            val norm = 1.32 / maxAbs
             for (i in 0 until n) {
                 out[i] *= norm
             }
@@ -405,48 +555,75 @@ object ProceduralDrumSynthesizer {
 
     private fun dryDurationSecondsFor(kitId: DrumKitId, padId: DrumPadId): Double = when (padId) {
         DrumPadId.HI_HAT_CLOSED -> 0.14
-        DrumPadId.KICK_LEFT, DrumPadId.KICK_RIGHT -> if (kitId == DrumKitId.TRAP_808) 0.46 else 0.28
-        DrumPadId.SNARE -> 0.27
-        DrumPadId.TOM_HIGH -> 0.30
-        DrumPadId.TOM_MID -> 0.34
-        DrumPadId.TOM_FLOOR -> 0.38
-        DrumPadId.HI_HAT_OPEN -> 0.48
-        DrumPadId.RIDE -> 0.56
-        DrumPadId.CRASH -> 0.62
-    }
-
-    private fun bronzeCymbalMatrix(t: Double, kitId: DrumKitId): Double {
-        // 8 high-frequency inharmonic bronze partials (2.2kHz..9.4kHz) with subtle FM shimmer
-        val shift = when (kitId) {
-            DrumKitId.ACOUSTIC_STUDIO -> 1.00
-            DrumKitId.TRAP_808 -> 1.12
-            DrumKitId.VINTAGE_BREAKBEAT -> 0.94
-            DrumKitId.SYNTHWAVE_ELECTRONIC -> 1.08
-        }
-        val fm = sin(TWO_PI * 1490.0 * shift * t) * 0.32
-        val f1 = 2240.0 * shift
-        val f2 = 3070.0 * shift
-        val f3 = 3890.0 * shift
-        val f4 = 4730.0 * shift
-        val f5 = 5820.0 * shift
-        val f6 = 6940.0 * shift
-        val f7 = 8190.0 * shift
-        val f8 = 9420.0 * shift
-        return (
-            sin(TWO_PI * f1 * t + fm) +
-                sin(TWO_PI * f2 * t + 0.5 + fm * 0.8) +
-                sin(TWO_PI * f3 * t + 1.1) +
-                sin(TWO_PI * f4 * t + 1.8 + fm * 0.6) +
-                sin(TWO_PI * f5 * t + 2.4) +
-                sin(TWO_PI * f6 * t + 3.0) +
-                sin(TWO_PI * f7 * t + 0.8) * 0.75 +
-                sin(TWO_PI * f8 * t + 1.9) * 0.65
-            ) / 7.4
+        DrumPadId.KICK_LEFT, DrumPadId.KICK_RIGHT -> if (kitId == DrumKitId.TRAP_808) 0.46 else 0.29
+        DrumPadId.SNARE -> 0.28
+        DrumPadId.TOM_HIGH -> 0.32
+        DrumPadId.TOM_MID -> 0.36
+        DrumPadId.TOM_FLOOR -> 0.40
+        DrumPadId.HI_HAT_OPEN -> 0.50
+        DrumPadId.RIDE -> 0.62
+        DrumPadId.CRASH -> 0.78
     }
 
     private fun softClip(x: Double): Double {
         val clamped = max(-2.5, min(2.5, x))
         return clamped / (1.0 + 0.28 * clamped.pow(2.0))
+    }
+
+    private fun decodeRiffWavMono(wavBytes: ByteArray): DoubleArray? {
+        if (wavBytes.size < WAV_HEADER_BYTES) return null
+        if (wavBytes[0] != 'R'.code.toByte() ||
+            wavBytes[1] != 'I'.code.toByte() ||
+            wavBytes[2] != 'F'.code.toByte() ||
+            wavBytes[3] != 'F'.code.toByte()
+        ) {
+            return null
+        }
+
+        val buffer = ByteBuffer.wrap(wavBytes).order(ByteOrder.LITTLE_ENDIAN)
+        var channels = 1
+        var bitsPerSample = 16
+        var dataOffset = -1
+        var dataSize = 0
+
+        var pos = 12
+        while (pos + 8 <= wavBytes.size) {
+            val chunkId = String(wavBytes, pos, 4, Charsets.US_ASCII)
+            val chunkSize = buffer.getInt(pos + 4)
+            val chunkDataStart = pos + 8
+            if (chunkSize < 0 || chunkDataStart > wavBytes.size) break
+
+            when (chunkId) {
+                "fmt " -> if (chunkDataStart + 16 <= wavBytes.size) {
+                    channels = buffer.getShort(chunkDataStart + 2).toInt().coerceAtLeast(1)
+                    bitsPerSample = buffer.getShort(chunkDataStart + 14).toInt()
+                }
+                "data" -> {
+                    dataOffset = chunkDataStart
+                    dataSize = min(chunkSize, wavBytes.size - chunkDataStart)
+                    break
+                }
+            }
+            val paddedSize = chunkSize + (chunkSize and 1)
+            pos = chunkDataStart + paddedSize
+        }
+
+        if (dataOffset < 0 || bitsPerSample != 16) return null
+        val bytesPerFrame = channels * 2
+        val frameCount = dataSize / bytesPerFrame
+        if (frameCount <= 0) return null
+
+        val out = DoubleArray(frameCount)
+        var byteIdx = dataOffset
+        for (i in 0 until frameCount) {
+            var sum = 0.0
+            for (ch in 0 until channels) {
+                sum += buffer.getShort(byteIdx).toDouble() / 32768.0
+                byteIdx += 2
+            }
+            out[i] = sum / channels.toDouble()
+        }
+        return out
     }
 
     private fun encodeRiffWav(pcmSamples: ShortArray, sampleRate: Int): ByteArray {
