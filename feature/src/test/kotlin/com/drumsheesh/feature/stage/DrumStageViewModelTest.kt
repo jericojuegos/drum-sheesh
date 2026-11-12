@@ -3,6 +3,9 @@ package com.drumsheesh.feature.stage
 import com.drumsheesh.core.engine.PadHitResolver
 import com.drumsheesh.core.model.DrumKitId
 import com.drumsheesh.core.model.DrumPadId
+import com.drumsheesh.core.model.DrumSoundProfile
+import com.drumsheesh.core.model.RoomAmbiencePreset
+import com.drumsheesh.core.model.SoundCharacterPreset
 import com.drumsheesh.core.port.ClockPort
 import com.drumsheesh.core.port.DrumAudioPort
 import org.junit.Assert.assertEquals
@@ -16,11 +19,16 @@ class DrumStageViewModelTest {
 
     private class FakeDrumAudioPort : DrumAudioPort {
         val preloadedKits = mutableListOf<DrumKitId>()
+        val updatedProfiles = mutableListOf<Pair<DrumKitId, DrumSoundProfile>>()
         val triggeredHits = mutableListOf<Triple<DrumKitId, DrumPadId, Float>>()
         var stopAllCalledCount = 0
 
         override fun preloadKit(kitId: DrumKitId) {
             preloadedKits.add(kitId)
+        }
+
+        override fun updateSoundProfile(kitId: DrumKitId, profile: DrumSoundProfile) {
+            updatedProfiles.add(kitId to profile)
         }
 
         override fun triggerPad(kitId: DrumKitId, padId: DrumPadId, velocity: Float) {
@@ -138,5 +146,36 @@ class DrumStageViewModelTest {
         assertEquals(DrumStageViewModel.MIN_BPM, viewModel.uiState.value.bpm)
         viewModel.onEvent(DrumStageUiEvent.AdjustBpm(500))
         assertEquals(DrumStageViewModel.MAX_BPM, viewModel.uiState.value.bpm)
+    }
+
+    @Test
+    fun `sound character presets, room ambience, and per-pad tuning update active kit profile and notify audio port`() {
+        val fakeAudio = FakeDrumAudioPort()
+        val viewModel = DrumStageViewModel(drumAudioPort = fakeAudio)
+
+        viewModel.onEvent(DrumStageUiEvent.ApplySoundCharacterPreset(SoundCharacterPreset.ARENA_ROCK))
+        assertEquals(
+            RoomAmbiencePreset.ARENA_VERB,
+            viewModel.uiState.value.activeSoundProfile.roomPreset
+        )
+
+        viewModel.onEvent(
+            DrumStageUiEvent.UpdatePadMix(
+                padId = DrumPadId.SNARE,
+                volume = 1.15f,
+                pitchSemitones = 2.5f
+            )
+        )
+        val snareMix = viewModel.uiState.value.activeSoundProfile.settingFor(DrumPadId.SNARE)
+        assertEquals(1.15f, snareMix.clampedVolume, 0.001f)
+        assertEquals(2.5f, snareMix.clampedPitchSemitones, 0.001f)
+        assertNull(viewModel.uiState.value.activeSoundProfile.characterPreset)
+        assertEquals(DrumKitId.ACOUSTIC_STUDIO, fakeAudio.updatedProfiles.last().first)
+
+        viewModel.onEvent(DrumStageUiEvent.ResetSoundProfile)
+        assertEquals(
+            DrumSoundProfile.defaultForKit(DrumKitId.ACOUSTIC_STUDIO),
+            viewModel.uiState.value.activeSoundProfile
+        )
     }
 }

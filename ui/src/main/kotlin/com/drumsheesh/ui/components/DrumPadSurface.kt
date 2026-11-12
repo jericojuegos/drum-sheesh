@@ -83,6 +83,8 @@ fun StudioTopBar(
     onSelectKit: (DrumKitId) -> Unit,
     onToggleHandedness: () -> Unit,
     onAdjustBpm: (Int) -> Unit,
+    onOpenSoundModal: (() -> Unit)? = null,
+    soundBadgeLabel: String? = null,
     onOpenAiModal: (() -> Unit)? = null,
     onToggleLoopDrawer: (() -> Unit)? = null,
     isLoopDrawerOpen: Boolean = false,
@@ -166,6 +168,25 @@ fun StudioTopBar(
                         }
                     )
                 }
+            }
+        }
+
+        if (onOpenSoundModal != null) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(StudioTokens.RadiusMd))
+                    .background(StudioColors.GoodBlue.copy(alpha = 0.16f))
+                    .border(1.dp, StudioColors.GoodBlue, RoundedCornerShape(StudioTokens.RadiusMd))
+                    .clickable { onOpenSoundModal() }
+                    .padding(horizontal = 9.dp, vertical = 5.dp)
+            ) {
+                Text(
+                    text = soundBadgeLabel?.let { "🎛 SOUND: $it" } ?: "🎛 SOUND / MIX",
+                    color = StudioColors.GoodBlue,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
             }
         }
 

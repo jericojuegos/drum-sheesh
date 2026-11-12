@@ -3,7 +3,12 @@ package com.drumsheesh.core.engine
 import com.drumsheesh.core.audio.ProceduralDrumSynthesizer
 import com.drumsheesh.core.model.DrumKitId
 import com.drumsheesh.core.model.DrumPadId
+import com.drumsheesh.core.model.DrumSoundProfile
+import com.drumsheesh.core.model.PadMixSetting
+import com.drumsheesh.core.model.RoomAmbiencePreset
+import com.drumsheesh.core.model.SoundCharacterPreset
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -127,5 +132,31 @@ class PadHitAndSynthTest {
             }
         }
         assertEquals(40, totalVerified)
+    }
+
+    @Test
+    fun `DrumSoundProfile room ambience and character presets distinctly shape synthesized WAV buffers`() {
+        val dryWav = ProceduralDrumSynthesizer.synthesizeWavBytes(
+            kitId = DrumKitId.ACOUSTIC_STUDIO,
+            padId = DrumPadId.SNARE,
+            profile = SoundCharacterPreset.TIGHT_DRY_POP.toProfile()
+        )
+        val arenaWav = ProceduralDrumSynthesizer.synthesizeWavBytes(
+            kitId = DrumKitId.ACOUSTIC_STUDIO,
+            padId = DrumPadId.SNARE,
+            profile = SoundCharacterPreset.ARENA_ROCK.toProfile()
+        )
+
+        assertTrue(arenaWav.size > dryWav.size)
+        assertFalse(dryWav.contentEquals(arenaWav))
+        assertTrue(ProceduralDrumSynthesizer.computeWavRms(dryWav) > 0.01)
+        assertTrue(ProceduralDrumSynthesizer.computeWavRms(arenaWav) > 0.01)
+
+        // PadMixSetting clamps volume and semitones cleanly to SoundPool playback bounds
+        val extreme = PadMixSetting(volume = 5.0f, pitchSemitones = 24.0f)
+        assertEquals(PadMixSetting.MAX_VOLUME, extreme.clampedVolume, 0.001f)
+        assertEquals(PadMixSetting.MAX_SEMITONES, extreme.clampedPitchSemitones, 0.001f)
+        assertTrue(extreme.playbackRate in 0.5f..2.0f)
+        assertEquals(RoomAmbiencePreset.ARENA_VERB, SoundCharacterPreset.ARENA_ROCK.toProfile().roomPreset)
     }
 }

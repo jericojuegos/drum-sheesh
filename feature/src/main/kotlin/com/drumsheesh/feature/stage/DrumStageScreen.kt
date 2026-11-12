@@ -17,10 +17,15 @@ import com.drumsheesh.core.engine.PadHitResult
 import com.drumsheesh.core.engine.PadHitZone
 import com.drumsheesh.core.model.DrumKitId
 import com.drumsheesh.core.model.DrumPadId
+import com.drumsheesh.core.model.DrumSoundProfile
+import com.drumsheesh.core.model.PadMixSetting
+import com.drumsheesh.core.model.RoomAmbiencePreset
+import com.drumsheesh.core.model.SoundCharacterPreset
 import com.drumsheesh.core.port.ClockPort
 import com.drumsheesh.core.port.DrumAudioPort
 import com.drumsheesh.ui.components.MultiTouchDrumStageCanvas
 import com.drumsheesh.ui.components.PadHitVisualState
+import com.drumsheesh.ui.components.SoundMixerModal
 import com.drumsheesh.ui.components.StudioTopBar
 import com.drumsheesh.ui.theme.StudioColors
 import com.drumsheesh.ui.theme.StudioTokens
@@ -56,8 +61,15 @@ data class DrumStageUiState(
     val totalHitsInSession: Int = 0,
     val openHiHatRinging: Boolean = false,
     val lastChokeAtMs: Long? = null,
-    val isChokeFlashActive: Boolean = false
-)
+    val isChokeFlashActive: Boolean = false,
+    val kitProfiles: Map<DrumKitId, DrumSoundProfile> = DrumKitId.entries.associateWith {
+        DrumSoundProfile.defaultForKit(it)
+    },
+    val isSoundModalOpen: Boolean = false
+) {
+    val activeSoundProfile: DrumSoundProfile
+        get() = kitProfiles[selectedKit] ?: DrumSoundProfile.defaultForKit(selectedKit)
+}
 
 /**
  * Discrete UDF UI Events emitted by [DrumStageScreen].
@@ -69,6 +81,16 @@ sealed interface DrumStageUiEvent {
     data object ToggleHandedness : DrumStageUiEvent
     data class AdjustBpm(val delta: Int) : DrumStageUiEvent
     data class StepAnimationFrame(val frameTimeMs: Long) : DrumStageUiEvent
+    data class SetSoundModalOpen(val open: Boolean) : DrumStageUiEvent
+    data class ApplySoundCharacterPreset(val preset: SoundCharacterPreset) : DrumStageUiEvent
+    data class SelectRoomAmbience(val room: RoomAmbiencePreset) : DrumStageUiEvent
+    data class SetPunchAndWarmth(val punch: Float, val warmth: Float) : DrumStageUiEvent
+    data class UpdatePadMix(
+        val padId: DrumPadId,
+        val volume: Float,
+        val pitchSemitones: Float
+    ) : DrumStageUiEvent
+    data object ResetSoundProfile : DrumStageUiEvent
 }
 
 /**
@@ -104,7 +126,9 @@ class DrumStageViewModel(
     val uiState: StateFlow<DrumStageUiState> = _uiState.asStateFlow()
 
     init {
-        drumAudioPort.preloadKit(_uiState.value.selectedKit)
+        val initialKit = _uiState.value.selectedKit
+        drumAudioPort.preloadKit(initialKit)
+        drumAudioPort.updateSoundProfile(initialKit, _uiState.value.activeSoundProfile)
     }
 
     fun onEvent(event: DrumStageUiEvent) {
@@ -115,6 +139,34 @@ class DrumStageViewModel(
             is DrumStageUiEvent.ToggleHandedness -> handleToggleHandedness()
             is DrumStageUiEvent.AdjustBpm -> handleAdjustBpm(event.delta)
             is DrumStageUiEvent.StepAnimationFrame -> handleStepAnimationFrame(event.frameTimeMs)
+            is DrumStageUiEvent.SetSoundModalOpen -> _uiState.update { it.copy(isSoundModalOpen = event.open) }
+            is DrumStageUiEvent.ApplySoundCharacterPreset -> updateActiveKitProfile {
+                event.preset.toProfile()
+            }
+            is DrumStageUiEvent.SelectRoomAmbience -> updateActiveKitProfile { current ->
+                current.copy(characterPreset = null, roomPreset = event.room)
+            }
+            is DrumStageUiEvent.SetPunchAndWarmth -> updateActiveKitProfile { current ->
+                current.copy(
+                    characterPreset = null,
+                    punchAmount = event.punch.coerceIn(0f, 1f),
+                    warmthTone = event.warmth.coerceIn(0f, 1f)
+                )
+            }
+            is DrumStageUiEvent.UpdatePadMix -> updateActiveKitProfile { current ->
+                val updatedMap = current.padSettings.toMutableMap()
+                updatedMap[event.padId] = PadMixSetting(
+                    volume = event.volume.coerceIn(0f, PadMixSetting.MAX_VOLUME),
+                    pitchSemitones = event.pitchSemitones.coerceIn(
+                        PadMixSetting.MIN_SEMITONES,
+                        PadMixSetting.MAX_SEMITONES
+                    )
+                )
+                current.copy(characterPreset = null, padSettings = updatedMap)
+            }
+            DrumStageUiEvent.ResetSoundProfile -> updateActiveKitProfile {
+                DrumSoundProfile.defaultForKit(_uiState.value.selectedKit)
+            }
         }
     }
 
@@ -197,6 +249,19 @@ class DrumStageViewModel(
                 bpm = kitId.defaultBpm
             )
         }
+        val kitProfile = _uiState.value.activeSoundProfile
+        drumAudioPort.updateSoundProfile(kitId, kitProfile)
+    }
+
+    private fun updateActiveKitProfile(transform: (DrumSoundProfile) -> DrumSoundProfile) {
+        val currentState = _uiState.value
+        val activeKit = currentState.selectedKit
+        val updatedProfile = transform(currentState.activeSoundProfile)
+        val nextMap = currentState.kitProfiles.toMutableMap()
+        nextMap[activeKit] = updatedProfile
+
+        _uiState.update { it.copy(kitProfiles = nextMap) }
+        drumAudioPort.updateSoundProfile(activeKit, updatedProfile)
     }
 
     private fun handleToggleHandedness() {
@@ -291,6 +356,8 @@ fun DrumStageScreen(
             onSelectKit = { kit -> viewModel.onEvent(DrumStageUiEvent.SelectKit(kit)) },
             onToggleHandedness = { viewModel.onEvent(DrumStageUiEvent.ToggleHandedness) },
             onAdjustBpm = { delta -> viewModel.onEvent(DrumStageUiEvent.AdjustBpm(delta)) },
+            onOpenSoundModal = { viewModel.onEvent(DrumStageUiEvent.SetSoundModalOpen(true)) },
+            soundBadgeLabel = uiState.activeSoundProfile.roomPreset.displayName.uppercase(),
             onOpenAiModal = onOpenAiModal,
             onToggleLoopDrawer = onToggleLoopDrawer,
             isLoopDrawerOpen = isLoopDrawerOpen,
@@ -313,4 +380,29 @@ fun DrumStageScreen(
 
         bottomOverlayContent?.invoke()
     }
+
+    SoundMixerModal(
+        isOpen = uiState.isSoundModalOpen,
+        selectedKit = uiState.selectedKit,
+        profile = uiState.activeSoundProfile,
+        onDismiss = { viewModel.onEvent(DrumStageUiEvent.SetSoundModalOpen(false)) },
+        onApplyCharacterPreset = { preset ->
+            viewModel.onEvent(DrumStageUiEvent.ApplySoundCharacterPreset(preset))
+        },
+        onSelectRoomAmbience = { room ->
+            viewModel.onEvent(DrumStageUiEvent.SelectRoomAmbience(room))
+        },
+        onSetPunchAndWarmth = { punch, warmth ->
+            viewModel.onEvent(DrumStageUiEvent.SetPunchAndWarmth(punch, warmth))
+        },
+        onUpdatePadMix = { padId, volume, pitchSemitones ->
+            viewModel.onEvent(DrumStageUiEvent.UpdatePadMix(padId, volume, pitchSemitones))
+        },
+        onAuditionPad = { padId ->
+            viewModel.onEvent(DrumStageUiEvent.DirectPadTrigger(padId, 0.90f))
+        },
+        onResetProfile = {
+            viewModel.onEvent(DrumStageUiEvent.ResetSoundProfile)
+        }
+    )
 }
