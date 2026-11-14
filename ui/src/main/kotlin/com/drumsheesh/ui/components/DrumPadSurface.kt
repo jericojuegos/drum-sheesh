@@ -67,7 +67,8 @@ data class PadHitVisualState(
     val touchXNorm: Float,
     val touchYNorm: Float,
     val velocity: Float,
-    val progress: Float // 0.0f (fresh hit) -> 1.0f (fully decayed)
+    val progress: Float, // 0.0f (fresh hit) -> 1.0f (fully decayed)
+    val zoneLabel: String? = null
 )
 
 /**
@@ -658,7 +659,7 @@ fun MultiTouchDrumStageCanvas(
     isLeftHanded: Boolean,
     activeHits: List<PadHitVisualState>,
     isChokeFlashActive: Boolean,
-    onPointerTouchHit: (xNorm: Float, yNorm: Float) -> Unit,
+    onPointerTouchHit: (xNorm: Float, yNorm: Float, touchPressure: Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val currentIsLeftHanded by rememberUpdatedState(isLeftHanded)
@@ -728,11 +729,12 @@ fun MultiTouchDrumStageCanvas(
                                     val resolved = PadHitResolver.resolveHit(
                                         xNorm = xNorm,
                                         yNorm = yNorm,
-                                        isLeftHanded = currentIsLeftHanded
+                                        isLeftHanded = currentIsLeftHanded,
+                                        touchPressure = change.pressure
                                     )
                                     if (resolved != null) {
                                         pointerActivePad[pointerKey] = resolved.padId
-                                        currentOnPointerTouchHit(xNorm, yNorm)
+                                        currentOnPointerTouchHit(xNorm, yNorm, change.pressure)
                                     } else {
                                         pointerActivePad.remove(pointerKey)
                                     }
@@ -740,12 +742,13 @@ fun MultiTouchDrumStageCanvas(
                                     val resolved = PadHitResolver.resolveHit(
                                         xNorm = xNorm,
                                         yNorm = yNorm,
-                                        isLeftHanded = currentIsLeftHanded
+                                        isLeftHanded = currentIsLeftHanded,
+                                        touchPressure = change.pressure
                                     )
                                     val previousPad = pointerActivePad[pointerKey]
                                     if (resolved != null && resolved.padId != previousPad) {
                                         pointerActivePad[pointerKey] = resolved.padId
-                                        currentOnPointerTouchHit(xNorm, yNorm)
+                                        currentOnPointerTouchHit(xNorm, yNorm, change.pressure)
                                     } else if (resolved == null) {
                                         pointerActivePad.remove(pointerKey)
                                     }
@@ -954,8 +957,9 @@ fun MultiTouchDrumStageCanvas(
                 } else {
                     StudioColors.TextPrimaryDark.toArgb()
                 }
+                val badgeText = latestHit?.takeIf { isHitActive }?.zoneLabel ?: geom.padId.shortLabel
                 drawContext.canvas.nativeCanvas.drawText(
-                    geom.padId.shortLabel,
+                    badgeText,
                     geom.cx,
                     geom.badgeCenterY + labelTextPaint.textSize * 0.36f,
                     labelTextPaint
@@ -1102,11 +1106,17 @@ private fun DrawScope.drawRealisticSnare(
                 strokeWidth = 2f
             )
         }
-        // Subtle center batter dot / stick impact ring
+        // Subtle center batter dot / stick impact ring + off-center edge zone guide ring
         drawCircle(
             color = Color(0x18334155),
             radius = r * 0.24f,
             center = center
+        )
+        drawCircle(
+            color = Color(0x14334155),
+            radius = r * 0.68f,
+            center = center,
+            style = outerShellStroke
         )
     } else {
         drawCircle(

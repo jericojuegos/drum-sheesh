@@ -44,7 +44,8 @@ data class ActivePadRipple(
     val touchYNorm: Float,
     val velocity: Float,
     val triggeredAtMs: Long,
-    val progress: Float = 0f
+    val progress: Float = 0f,
+    val zoneLabel: String? = null
 )
 
 /**
@@ -75,7 +76,11 @@ data class DrumStageUiState(
  * Discrete UDF UI Events emitted by [DrumStageScreen].
  */
 sealed interface DrumStageUiEvent {
-    data class PointerTouchDown(val xNorm: Float, val yNorm: Float) : DrumStageUiEvent
+    data class PointerTouchDown(
+        val xNorm: Float,
+        val yNorm: Float,
+        val touchPressure: Float = -1f
+    ) : DrumStageUiEvent
     data class DirectPadTrigger(val padId: DrumPadId, val velocity: Float = 0.85f) : DrumStageUiEvent
     data class SelectKit(val kitId: DrumKitId) : DrumStageUiEvent
     data object ToggleHandedness : DrumStageUiEvent
@@ -133,7 +138,11 @@ class DrumStageViewModel(
 
     fun onEvent(event: DrumStageUiEvent) {
         when (event) {
-            is DrumStageUiEvent.PointerTouchDown -> handlePointerTouchDown(event.xNorm, event.yNorm)
+            is DrumStageUiEvent.PointerTouchDown -> handlePointerTouchDown(
+                xNorm = event.xNorm,
+                yNorm = event.yNorm,
+                touchPressure = event.touchPressure
+            )
             is DrumStageUiEvent.DirectPadTrigger -> handleDirectPadTrigger(event.padId, event.velocity)
             is DrumStageUiEvent.SelectKit -> handleSelectKit(event.kitId)
             is DrumStageUiEvent.ToggleHandedness -> handleToggleHandedness()
@@ -170,12 +179,17 @@ class DrumStageViewModel(
         }
     }
 
-    private fun handlePointerTouchDown(xNorm: Float, yNorm: Float) {
+    private fun handlePointerTouchDown(
+        xNorm: Float,
+        yNorm: Float,
+        touchPressure: Float = -1f
+    ) {
         val currentState = _uiState.value
         val hitResult = PadHitResolver.resolveHit(
             xNorm = xNorm,
             yNorm = yNorm,
-            isLeftHanded = currentState.isLeftHanded
+            isLeftHanded = currentState.isLeftHanded,
+            touchPressure = touchPressure
         ) ?: return
 
         dispatchResolvedHit(hitResult)
@@ -202,11 +216,22 @@ class DrumStageViewModel(
         val currentKit = _uiState.value.selectedKit
 
         // Trigger low-latency audio immediately on pointer-down
-        drumAudioPort.triggerPad(
-            kitId = currentKit,
-            padId = hitResult.padId,
-            velocity = hitResult.velocity
-        )
+        val snareHit = hitResult.snareHit
+        if (hitResult.padId == DrumPadId.SNARE && snareHit != null) {
+            drumAudioPort.triggerSnare(
+                kitId = currentKit,
+                articulation = snareHit.articulation,
+                velocity = hitResult.velocity,
+                roundRobinIndex = snareHit.roundRobinIndex,
+                playbackRateMultiplier = snareHit.pitchJitterRate
+            )
+        } else {
+            drumAudioPort.triggerPad(
+                kitId = currentKit,
+                padId = hitResult.padId,
+                velocity = hitResult.velocity
+            )
+        }
 
         onPadHitListener?.invoke(hitResult, nowMs)
 
@@ -226,7 +251,8 @@ class DrumStageViewModel(
                     touchYNorm = hitResult.normalizedY,
                     velocity = hitResult.velocity,
                     triggeredAtMs = nowMs,
-                    progress = 0f
+                    progress = 0f,
+                    zoneLabel = snareHit?.articulation?.displayLabel
                 )
 
             state.copy(
@@ -337,7 +363,8 @@ fun DrumStageScreen(
             touchXNorm = ripple.touchXNorm,
             touchYNorm = ripple.touchYNorm,
             velocity = ripple.velocity,
-            progress = ripple.progress
+            progress = ripple.progress,
+            zoneLabel = ripple.zoneLabel
         )
     }
 
@@ -372,8 +399,8 @@ fun DrumStageScreen(
             isLeftHanded = uiState.isLeftHanded,
             activeHits = visualHits,
             isChokeFlashActive = uiState.isChokeFlashActive,
-            onPointerTouchHit = { xNorm, yNorm ->
-                viewModel.onEvent(DrumStageUiEvent.PointerTouchDown(xNorm, yNorm))
+            onPointerTouchHit = { xNorm, yNorm, touchPressure ->
+                viewModel.onEvent(DrumStageUiEvent.PointerTouchDown(xNorm, yNorm, touchPressure))
             },
             modifier = Modifier.weight(1f)
         )

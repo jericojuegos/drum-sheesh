@@ -1,6 +1,7 @@
 package com.drumsheesh.core.engine
 
 import com.drumsheesh.core.model.DrumPadId
+import com.drumsheesh.core.model.SnareHitParameters
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -34,7 +35,8 @@ data class PadHitResult(
     val velocity: Float,
     val normalizedX: Float,
     val normalizedY: Float,
-    val isChokeTrigger: Boolean = padId.chokesOpenHiHat
+    val isChokeTrigger: Boolean = padId.chokesOpenHiHat,
+    val snareHit: SnareHitParameters? = null
 )
 
 /**
@@ -160,7 +162,8 @@ object PadHitResolver {
     fun resolveHit(
         xNorm: Float,
         yNorm: Float,
-        isLeftHanded: Boolean = false
+        isLeftHanded: Boolean = false,
+        touchPressure: Float = -1f
     ): PadHitResult? {
         if (xNorm.isNaN() || yNorm.isNaN() || xNorm < 0f || xNorm > 1f || yNorm < 0f || yNorm > 1f) {
             return null
@@ -168,6 +171,7 @@ object PadHitResolver {
 
         var bestZone: PadHitZone? = null
         var bestNormalizedDistance = Float.MAX_VALUE
+        var bestDyNormalized = 0f
 
         for (zone in defaultZones) {
             val cx = zone.effectiveCenterX(isLeftHanded)
@@ -187,10 +191,27 @@ object PadHitResolver {
             if (normDistance <= 1.0f && normDistance < bestNormalizedDistance) {
                 bestNormalizedDistance = normDistance
                 bestZone = zone
+                bestDyNormalized = dy
             }
         }
 
         val hitZone = bestZone ?: return null
+        if (hitZone.padId == DrumPadId.SNARE) {
+            val snareHit = SnareInteractionEngine.resolveStrike(
+                radialDistance = bestNormalizedDistance,
+                dyNormalized = bestDyNormalized,
+                touchPressure = touchPressure
+            )
+            return PadHitResult(
+                padId = hitZone.padId,
+                velocity = snareHit.velocity,
+                normalizedX = xNorm,
+                normalizedY = yNorm,
+                isChokeTrigger = false,
+                snareHit = snareHit
+            )
+        }
+
         val rawVelocity = MAX_RADIAL_VELOCITY -
             bestNormalizedDistance.coerceIn(0f, 1f) * (MAX_RADIAL_VELOCITY - MIN_RADIAL_VELOCITY)
         val clampedVelocity = min(MAX_RADIAL_VELOCITY, max(MIN_RADIAL_VELOCITY, rawVelocity))

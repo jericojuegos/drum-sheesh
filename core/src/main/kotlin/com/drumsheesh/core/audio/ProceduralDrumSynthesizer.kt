@@ -4,6 +4,7 @@ import com.drumsheesh.core.model.DrumKitId
 import com.drumsheesh.core.model.DrumPadId
 import com.drumsheesh.core.model.DrumSoundProfile
 import com.drumsheesh.core.model.RoomAmbiencePreset
+import com.drumsheesh.core.model.SnareArticulation
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
@@ -72,6 +73,167 @@ object ProceduralDrumSynthesizer {
             padId = padId,
             profile = profile,
             attackFadeSamples = 16
+        )
+        return encodeRiffWav(samples, SAMPLE_RATE_HZ)
+    }
+
+    /**
+     * Shapes a real 16-bit snare articulation WAV with articulation-aware warmth and punch,
+     * preserving intimate ghost-note buzz, crisp edge overtones, woody cross-stick, and explosive rimshot snap.
+     */
+    fun processSnareWavWithProfile(
+        wavBytes: ByteArray,
+        articulation: SnareArticulation,
+        profile: DrumSoundProfile
+    ): ByteArray {
+        val basePunch = profile.clampedPunch
+        val baseWarmth = profile.clampedWarmth
+        val tunedProfile = when (articulation) {
+            SnareArticulation.GHOST_NOTE -> profile.copy(
+                punchAmount = (basePunch * 0.65f).coerceIn(0f, 1f),
+                warmthTone = (baseWarmth + 0.14f).coerceIn(0f, 1f)
+            )
+            SnareArticulation.CENTER_SOFT -> profile.copy(
+                punchAmount = (basePunch * 0.85f).coerceIn(0f, 1f),
+                warmthTone = (baseWarmth + 0.05f).coerceIn(0f, 1f)
+            )
+            SnareArticulation.CENTER_HARD -> profile
+            SnareArticulation.EDGE_CRISP -> profile.copy(
+                punchAmount = (basePunch + 0.12f).coerceIn(0f, 1f),
+                warmthTone = (baseWarmth - 0.16f).coerceIn(0f, 1f)
+            )
+            SnareArticulation.CROSS_STICK -> profile.copy(
+                punchAmount = (basePunch + 0.15f).coerceIn(0f, 1f),
+                warmthTone = (baseWarmth - 0.08f).coerceIn(0f, 1f)
+            )
+            SnareArticulation.RIMSHOT -> profile.copy(
+                punchAmount = (basePunch + 0.25f).coerceIn(0f, 1f),
+                warmthTone = (baseWarmth - 0.12f).coerceIn(0f, 1f)
+            )
+        }
+        return processWavWithProfile(wavBytes, DrumPadId.SNARE, tunedProfile)
+    }
+
+    /**
+     * Synthesizes a dedicated snare articulation WAV (Ghost, Soft, Hard, Edge, Cross-Stick, Rimshot)
+     * with deterministic round-robin [variantIndex] texture for synthesized kits and fallback.
+     */
+    fun synthesizeSnareArticulationWavBytes(
+        kitId: DrumKitId,
+        articulation: SnareArticulation,
+        variantIndex: Int = 0,
+        profile: DrumSoundProfile = DrumSoundProfile.defaultForKit(kitId)
+    ): ByteArray {
+        val roomTailSec = if (profile.roomPreset == RoomAmbiencePreset.DRY_BOOTH) {
+            0.05
+        } else {
+            profile.roomPreset.decaySeconds * (if (articulation == SnareArticulation.CROSS_STICK) 0.42 else 0.65)
+        }
+        val dryDurationSec = when (articulation) {
+            SnareArticulation.CROSS_STICK -> 0.15
+            SnareArticulation.GHOST_NOTE -> 0.18
+            SnareArticulation.CENTER_SOFT -> 0.24
+            SnareArticulation.EDGE_CRISP -> 0.26
+            SnareArticulation.CENTER_HARD -> 0.30
+            SnareArticulation.RIMSHOT -> 0.34
+        }
+        val totalSamples = (SAMPLE_RATE_HZ * (dryDurationSec + roomTailSec).coerceAtMost(1.38)).toInt().coerceAtLeast(1024)
+        val drySignal = DoubleArray(totalSamples)
+        val punch = profile.clampedPunch.toDouble()
+
+        var noiseState = (kitId.ordinal + 1) * 1_103_515_245L +
+            (articulation.ordinal + 17) * 54_321L +
+            (variantIndex and 3) * 98_765L
+        var pinkB0 = 0.0
+        var pinkB1 = 0.0
+        var pinkB2 = 0.0
+        var prevPink = 0.0
+
+        val (bodyFreq, wireMix, bodyDecay, wireDecay, baseDrive) = when (kitId) {
+            DrumKitId.ACOUSTIC_STUDIO -> Quintuple(188.0, 0.85, 15.5, 9.8, 1.40)
+            DrumKitId.TRAP_808 -> Quintuple(232.0, 0.90, 24.0, 13.5, 1.55)
+            DrumKitId.VINTAGE_BREAKBEAT -> Quintuple(178.0, 0.78, 18.5, 12.0, 1.50)
+            DrumKitId.SYNTHWAVE_ELECTRONIC -> Quintuple(172.0, 0.88, 13.0, 6.6, 1.46)
+        }
+
+        var phase1 = 0.0
+        var phase2 = 0.0
+        var phase3 = 0.0
+
+        for (i in 0 until totalSamples) {
+            val t = i.toDouble() / SAMPLE_RATE_HZ.toDouble()
+            noiseState = (noiseState * 6364136223846793005L + 1442695040888963407L)
+            val white = (((noiseState ushr 33).toInt()).toDouble() / Int.MAX_VALUE.toDouble()).coerceIn(-1.0, 1.0)
+            pinkB0 = 0.99765 * pinkB0 + white * 0.0990460
+            pinkB1 = 0.96300 * pinkB1 + white * 0.2965164
+            pinkB2 = 0.57000 * pinkB2 + white * 1.0526913
+            val pink = ((pinkB0 + pinkB1 + pinkB2 + white * 0.1848) * 0.24).coerceIn(-1.0, 1.0)
+            val crispNoise = pink - prevPink * 0.82
+            prevPink = pink
+
+            drySignal[i] = when (articulation) {
+                SnareArticulation.CROSS_STICK -> {
+                    // Clean woody + metallic rim click with minimal snare wire bleed
+                    val woodClick = (
+                        sin(TWO_PI * 465.0 * t) * 0.52 +
+                            sin(TWO_PI * 1190.0 * t) * 0.44 +
+                            sin(TWO_PI * 2420.0 * t) * 0.28
+                        ) * exp(-t * 48.0)
+                    val stickTap = crispNoise * exp(-t * 160.0) * 0.35
+                    val ghostWire = pink * exp(-t * 32.0) * 0.08
+                    softClip((woodClick + stickTap + ghostWire) * (1.35 + punch * 0.25))
+                }
+                SnareArticulation.RIMSHOT -> {
+                    // Explosive head + steel hoop overtones + full aggressive wire burst
+                    val instFreq = (bodyFreq * 1.06) + 145.0 * exp(-t * 55.0)
+                    phase1 += TWO_PI * instFreq / SAMPLE_RATE_HZ
+                    phase2 += TWO_PI * (instFreq * 2.18) / SAMPLE_RATE_HZ
+                    phase3 += TWO_PI * 910.0 / SAMPLE_RATE_HZ
+                    val head = (sin(phase1) * 0.65 + sin(phase2) * 0.35) * exp(-t * (bodyDecay * 0.85))
+                    val rimRing = (sin(phase3) * 0.55 + sin(TWO_PI * 1880.0 * t) * 0.35) * exp(-t * 38.0)
+                    val wires = crispNoise * exp(-t * (wireDecay * 0.88)) * wireMix * 1.15
+                    val crack = (sin(TWO_PI * 2650.0 * t) * 0.42 + crispNoise * 0.55) * exp(-t * 150.0)
+                    softClip((head + rimRing + wires + crack) * baseDrive * (1.18 + punch * 0.25))
+                }
+                SnareArticulation.GHOST_NOTE -> {
+                    // Intimate soft membrane + delicate warm wire buzz
+                    val instFreq = bodyFreq * 0.96 + 45.0 * exp(-t * 40.0)
+                    phase1 += TWO_PI * instFreq / SAMPLE_RATE_HZ
+                    val head = sin(phase1) * 0.48 * exp(-t * (bodyDecay * 1.25))
+                    val softWires = (pink * 0.45 + crispNoise * 0.35) * exp(-t * (wireDecay * 1.15)) * wireMix * 0.72
+                    softClip((head + softWires) * baseDrive * 0.82)
+                }
+                SnareArticulation.EDGE_CRISP -> {
+                    // Brighter stick attack + crisp high-mid overtones
+                    val instFreq = bodyFreq * 1.08 + 95.0 * exp(-t * 50.0)
+                    phase1 += TWO_PI * instFreq / SAMPLE_RATE_HZ
+                    phase2 += TWO_PI * (instFreq * 1.78) / SAMPLE_RATE_HZ
+                    val head = (sin(phase1) * 0.45 + sin(phase2) * 0.38) * exp(-t * (bodyDecay * 1.05))
+                    val crispWires = crispNoise * exp(-t * wireDecay) * wireMix * 1.05
+                    val attack = sin(TWO_PI * 2450.0 * t) * exp(-t * 185.0) * (0.32 + punch * 0.28)
+                    softClip((head + crispWires + attack) * baseDrive)
+                }
+                SnareArticulation.CENTER_SOFT,
+                SnareArticulation.CENTER_HARD -> {
+                    val isHard = articulation == SnareArticulation.CENTER_HARD
+                    val instFreq = bodyFreq + (if (isHard) 115.0 else 75.0) * exp(-t * 45.0)
+                    phase1 += TWO_PI * instFreq / SAMPLE_RATE_HZ
+                    phase2 += TWO_PI * (instFreq * 1.593) / SAMPLE_RATE_HZ
+                    val head = (sin(phase1) * 0.68 + sin(phase2) * 0.26) * exp(-t * bodyDecay)
+                    val wires = (crispNoise * 0.68 + pink * 0.28) * exp(-t * wireDecay) *
+                        wireMix * (if (isHard) 1.05 else 0.82)
+                    val attack = (sin(TWO_PI * 2150.0 * t) * 0.34 + crispNoise * 0.48) *
+                        exp(-t * 170.0) * (if (isHard) 0.34 + punch * 0.30 else 0.16 + punch * 0.18)
+                    softClip((head + wires + attack) * baseDrive * (if (isHard) 1.05 else 0.90))
+                }
+            }
+        }
+
+        val samples = finalizeSamples(
+            drySignal = drySignal,
+            padId = DrumPadId.SNARE,
+            profile = profile,
+            attackFadeSamples = 24
         )
         return encodeRiffWav(samples, SAMPLE_RATE_HZ)
     }

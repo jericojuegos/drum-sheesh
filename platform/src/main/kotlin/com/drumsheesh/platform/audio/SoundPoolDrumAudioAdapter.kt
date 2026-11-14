@@ -11,9 +11,11 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import com.drumsheesh.core.audio.ProceduralDrumSynthesizer
 import com.drumsheesh.core.engine.HiHatChokeTracker
+import com.drumsheesh.core.engine.SnareInteractionEngine
 import com.drumsheesh.core.model.DrumKitId
 import com.drumsheesh.core.model.DrumPadId
 import com.drumsheesh.core.model.DrumSoundProfile
+import com.drumsheesh.core.model.SnareArticulation
 import com.drumsheesh.core.port.DrumAudioPort
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -38,7 +40,7 @@ class SoundPoolDrumAudioAdapter(
 
     companion object {
         const val MAX_POLYPHONIC_STREAMS: Int = 16
-        private const val SYNTH_CACHE_VERSION: String = "v5"
+        private const val SYNTH_CACHE_VERSION: String = "v6"
     }
 
     private data class PendingSwap(
@@ -47,15 +49,28 @@ class SoundPoolDrumAudioAdapter(
         val synthKey: String
     )
 
+    private data class SnareLayerKey(
+        val kitId: DrumKitId,
+        val articulation: SnareArticulation,
+        val variantIndex: Int
+    )
+
+    private data class PendingSnareSwap(
+        val key: SnareLayerKey,
+        val synthKey: String
+    )
+
     private val appContext: Context = context.applicationContext
     private val chokeTracker = HiHatChokeTracker()
     private val loadedSoundIds = ConcurrentHashMap<Pair<DrumKitId, DrumPadId>, Int>()
+    private val loadedSnareSoundIds = ConcurrentHashMap<SnareLayerKey, Int>()
     private val readySoundIds = ConcurrentHashMap<Int, Boolean>()
     private val activeStreamIds = ConcurrentHashMap.newKeySet<Int>()
     private val profilesByKit = ConcurrentHashMap<DrumKitId, DrumSoundProfile>()
     private val requestedSynthKeys = ConcurrentHashMap<DrumKitId, String>()
     private val loadedSynthKeys = ConcurrentHashMap<DrumKitId, String>()
     private val pendingSwaps = ConcurrentHashMap<Int, PendingSwap>()
+    private val pendingSnareSwaps = ConcurrentHashMap<Int, PendingSnareSwap>()
     private val synthExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     @Volatile
@@ -88,8 +103,17 @@ class SoundPoolDrumAudioAdapter(
                                 runCatching { pool.unload(previousId) }
                             }
                         }
+                        val snareSwap = pendingSnareSwaps.remove(sampleId)
+                        if (snareSwap != null) {
+                            val previousId = loadedSnareSoundIds.put(snareSwap.key, sampleId)
+                            if (previousId != null && previousId != sampleId) {
+                                readySoundIds.remove(previousId)
+                                runCatching { pool.unload(previousId) }
+                            }
+                        }
                     } else {
                         pendingSwaps.remove(sampleId)
+                        pendingSnareSwaps.remove(sampleId)
                     }
                 }
             }
@@ -158,6 +182,28 @@ class SoundPoolDrumAudioAdapter(
                 }
             }
         }
+        // Preload multi-tier, multi-zone snare articulations + round-robin variants
+        for (articulation in SnareArticulation.entries) {
+            for (variantIndex in 0 until SnareInteractionEngine.ROUND_ROBIN_VARIANTS) {
+                val snareKey = SnareLayerKey(kitId, articulation, variantIndex)
+                if (!replaceExisting && loadedSnareSoundIds.containsKey(snareKey)) continue
+
+                val snareFile = File(versionedDir, "${articulation.assetPrefix}_${variantIndex + 1}.wav")
+                if (!snareFile.exists() || snareFile.length() <= ProceduralDrumSynthesizer.WAV_HEADER_BYTES) {
+                    val wavBytes = renderSnareLayerWavBytes(kitId, articulation, variantIndex, profile)
+                    snareFile.writeBytes(wavBytes)
+                }
+
+                val soundId = pool.load(snareFile.absolutePath, 1)
+                if (soundId > 0) {
+                    if (replaceExisting && loadedSnareSoundIds.containsKey(snareKey)) {
+                        pendingSnareSwaps[soundId] = PendingSnareSwap(snareKey, synthKey)
+                    } else {
+                        loadedSnareSoundIds[snareKey] = soundId
+                    }
+                }
+            }
+        }
         loadedSynthKeys[kitId] = synthKey
 
         // Clean stale cached synth versions for this kit to keep cacheDir compact
@@ -184,6 +230,75 @@ class SoundPoolDrumAudioAdapter(
             }
         }
         return ProceduralDrumSynthesizer.synthesizeWavBytes(kitId, padId, profile)
+    }
+
+    private fun renderSnareLayerWavBytes(
+        kitId: DrumKitId,
+        articulation: SnareArticulation,
+        variantIndex: Int,
+        profile: DrumSoundProfile
+    ): ByteArray {
+        if (kitId == DrumKitId.ACOUSTIC_STUDIO) {
+            val fileName = "${articulation.assetPrefix}_${variantIndex + 1}.wav"
+            val assetBytes = runCatching {
+                appContext.assets.open("kits/acoustic-studio/$fileName").use { input ->
+                    input.readBytes()
+                }
+            }.getOrNull()
+            if (assetBytes != null && assetBytes.size > ProceduralDrumSynthesizer.WAV_HEADER_BYTES) {
+                return ProceduralDrumSynthesizer.processSnareWavWithProfile(assetBytes, articulation, profile)
+            }
+        }
+        return ProceduralDrumSynthesizer.synthesizeSnareArticulationWavBytes(
+            kitId = kitId,
+            articulation = articulation,
+            variantIndex = variantIndex,
+            profile = profile
+        )
+    }
+
+    override fun triggerSnare(
+        kitId: DrumKitId,
+        articulation: SnareArticulation,
+        velocity: Float,
+        roundRobinIndex: Int,
+        playbackRateMultiplier: Float
+    ) {
+        val clampedVel = velocity.coerceIn(0.1f, 1.0f)
+        val pool = soundPool ?: return
+
+        val snareKey = SnareLayerKey(
+            kitId = kitId,
+            articulation = articulation,
+            variantIndex = (roundRobinIndex and 0x7FFF_FFFF) % SnareInteractionEngine.ROUND_ROBIN_VARIANTS
+        )
+        val fallbackKey = kitId to DrumPadId.SNARE
+        if (!loadedSnareSoundIds.containsKey(snareKey) && !loadedSoundIds.containsKey(fallbackKey)) {
+            preloadKit(kitId)
+        }
+
+        val profile = profilesByKit[kitId] ?: DrumSoundProfile.defaultForKit(kitId)
+        val padMix = profile.settingFor(DrumPadId.SNARE)
+        if (padMix.clampedVolume <= 0.01f) {
+            return
+        }
+
+        val soundId = loadedSnareSoundIds[snareKey] ?: loadedSoundIds[fallbackKey] ?: return
+        val finalVolume = (clampedVel * padMix.clampedVolume).coerceIn(0.05f, 1.0f)
+        val finalRate = (padMix.playbackRate * playbackRateMultiplier).coerceIn(0.5f, 2.0f)
+        val streamId = pool.play(
+            soundId,
+            finalVolume,
+            finalVolume,
+            2,
+            0,
+            finalRate
+        )
+        if (streamId > 0) {
+            activeStreamIds.add(streamId)
+        }
+
+        hapticAdapter.pulseForHit(finalVolume)
     }
 
     override fun triggerPad(kitId: DrumKitId, padId: DrumPadId, velocity: Float) {
@@ -248,7 +363,9 @@ class SoundPoolDrumAudioAdapter(
         stopAllStreams()
         synthExecutor.shutdownNow()
         pendingSwaps.clear()
+        pendingSnareSwaps.clear()
         loadedSoundIds.clear()
+        loadedSnareSoundIds.clear()
         readySoundIds.clear()
         profilesByKit.clear()
         requestedSynthKeys.clear()
